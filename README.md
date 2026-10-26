@@ -79,7 +79,7 @@ def _prompt() -> str:
 ## 快速开始
 
 ```bash
-git clone https://github.com/<you>/CloudAgent.git && cd CloudAgent
+git clone https://github.com/msty256/CloudAgent-public.git && cd CloudAgent-public
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e ".[db]"
 
