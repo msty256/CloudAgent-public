@@ -1,0 +1,32 @@
+{
+  "archive_name": "services",
+  "package_name": "services",
+  "module_count": 130,
+  "sample_files": [
+    "services/AgentSummary/agentSummary.py",
+    "services/MagicDocs/magicDocs.py",
+    "services/MagicDocs/prompts.py",
+    "services/PromptSuggestion/promptSuggestion.py",
+    "services/PromptSuggestion/speculation.py",
+    "services/SessionMemory/prompts.py",
+    "services/SessionMemory/sessionMemory.py",
+    "services/SessionMemory/sessionMemoryUtils.py",
+    "services/analytics/config.py",
+    "services/analytics/datadog.py",
+    "services/analytics/firstPartyEventLogger.py",
+    "services/analytics/firstPartyEventLoggingExporter.py",
+    "services/analytics/growthbook.py",
+    "services/analytics/index.py",
+    "services/analytics/metadata.py",
+    "services/analytics/sink.py",
+    "services/analytics/sinkKillswitch.py",
+    "services/api/adminRequests.py",
+    "services/api/bootstrap.py",
+    "services/api/claude.py",
+    "services/api/client.py",
+    "services/api/dumpPrompts.py",
+    "services/api/emptyUsage.py",
+    "services/api/errorUtils.py",
+    "services/api/errors.py"
+  ]
+}

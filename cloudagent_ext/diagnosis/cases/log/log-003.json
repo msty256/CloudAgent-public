@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "case_id": "log-003",
+  "domain": "log",
+  "scenario": "non_hex_trace_negative",
+  "input": {
+    "question": "trace-abc-123 这种非纯 hex 形态的 traceId，日志工具还能关联吗？",
+    "context": {
+      "log_root_note": "仿真日志（write_sim_logs 生成）",
+      "trace_id": "trace-abc-123"
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "非 hex 形态的 traceId（trace-abc-123）可被正确提取并关联（实现已放宽命名空间提取，不限于纯 hex）",
+        "match_terms": ["trace-abc-123"],
+        "severity": "none"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "correlate_events",
+        "observation_terms": ["trace-abc-123"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "correlate_events", "input": {"trace_id": "trace-abc-123"}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "无需改动（非 hex traceId 已被支持）",
+        "match_terms": ["无需改动"]
+      }
+    ],
+    "forbidden_findings": ["非 hex traceId 无法识别"]
+  },
+  "expected_agents": ["log-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "阴性对照；输入=仿真日志；事实核实 2026-10-19（P1-1 修复后 trace 正则放宽为 [^\\]\\s]{8,64}）"
+}

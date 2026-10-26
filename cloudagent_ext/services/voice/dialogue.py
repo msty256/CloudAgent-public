@@ -1,0 +1,187 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# ---------------------------------------------------------------------------
+# This file is part of CloudAgent.
+# Copyright (c) 2026 CloudAgent Authors
+# Licensed under the MIT License. See the LICENSE file in the project root.
+# ---------------------------------------------------------------------------
+
+"""P65-A Voice dialogue orchestration."""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Any, Callable, Optional
+
+
+__all__ = [
+    "DialogueConfig",
+    "DialogueEvent",
+    "FullDuplexDialogueProvider",
+    "DialogueModality",
+    "DialogueState",
+]
+
+
+# ── config + event types ──────────────────────────────────────────────────
+
+DialogueModality = str  # "text" | "audio" | "text_and_audio"
+
+
+@dataclass
+class DialogueConfig:
+    """Full-duplex voice dialogue configuration.
+
+    Defaults target the MiniMax Realtime API: ``speech-2.8-turbo`` model,  # gitleaks:allow -- not a secret, model name
+    16 kHz mono input, 24 kHz mono output, and ``text`` modality so the
+    caller receives incremental text and can route it through its own
+    LLM / TTS pipeline. Set ``modality="audio"`` to get PCM TTS frames
+    straight from the server (no second TTS call needed); text is still
+    available via the transcript events in that mode.
+    """
+
+    model: str = "speech-2.8-turbo"
+    sample_rate: int = 16000  # input sample rate (microphone)
+    output_sample_rate: int = 24000  # output sample rate (speaker / TTS)
+    voice: str = ""  # provider-specific TTS voice id
+    modality: DialogueModality = "text"
+    language: str = "zh"  # ASR language hint; provider-specific
+    interim_results: bool = True  # stream partial transcripts
+    # Provider-specific knobs (e.g. MiniMax voice_setting, OpenAI turn_detection).
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class DialogueEvent:
+    """A single event delivered by :class:`FullDuplexDialogueProvider`.
+
+    The ``type`` field selects which other fields are populated; the
+    others default to empty values so callers can branch on ``type``
+    without checking each one. The set of event types mirrors the
+    MiniMax / OpenAI Realtime event families trimmed down to the
+    surface a full-duplex dialogue loop actually needs.
+    """
+
+    # ── discriminator ───────────────────────────────────────────────────
+    type: str  # "transcript" | "audio" | "done" | "error" | "interrupt" |
+    #           "ready" | "speech_started" | "speech_stopped"
+
+    # ── payload (only some are set per type) ────────────────────────────
+    text: str = ""  # transcript text (transcript/done)
+    pcm: bytes = b""  # PCM16 mono frame (audio)
+    sample_rate: int = 24000  # for audio frames
+    is_final: bool = False  # transcript finalization flag (transcript)
+    message: str = ""  # human-readable text (error)
+    # Optional provider-specific passthrough (e.g. raw event id, item id).
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+# ── state enum (used by session manager, kept here for cohesion) ────────
+
+
+class DialogueState(str):
+    """Provider-agnostic state names. Strings, not enum, to keep the
+    surface serializable for ``/dialogue status`` without extra plumbing.
+
+    * ``"idle"`` — session not started yet.
+    * ``"listening"`` — microphone open, no agent reply in flight.
+    * ``"speaking"`` — agent audio currently streaming.
+    * ``"interrupted"`` — barge-in detected, waiting for server ack.
+    * ``"done"`` — ``stop()`` called; final transcript returned.
+    * ``"error"`` — unrecoverable; caller should ``close()``.
+    """
+
+    IDLE = "idle"
+    LISTENING = "listening"
+    SPEAKING = "speaking"
+    INTERRUPTED = "interrupted"
+    DONE = "done"
+    ERROR = "error"
+
+
+# ── ABC ──────────────────────────────────────────────────────────────────
+
+
+class FullDuplexDialogueProvider(ABC):
+    """Abstract full-duplex voice dialogue backend.
+
+    One instance per live session (construct → ``start`` → ``feed_audio`` /
+    ``send_text`` in any order → ``stop`` → ``close``). The wire protocol
+    itself (WebSocket, gRPC stream, etc.) is encapsulated by the concrete
+    subclass; callers only see frames and events.
+
+    Callbacks
+    ---------
+    ``start`` takes a single ``on_event`` callback that receives every
+    :class:`DialogueEvent` the server emits (or a synthesised one for
+    transport errors). Callback delivery is asynchronous — most concrete
+    providers schedule it on the event loop. Exceptions in callbacks are
+    logged, not re-raised (callbacks must not block the wire task).
+    """
+
+    @abstractmethod
+    async def start(
+        self,
+        *,
+        on_event: Callable[[DialogueEvent], None],
+        config: Optional[DialogueConfig] = None,
+    ) -> None:
+        """Open the bidirectional channel and begin streaming events.
+
+        Returns once the transport is established; ``on_event`` may fire
+        before or after this returns (provider-specific). If the transport
+        cannot be opened the callback receives a ``DialogueEvent(type=
+        "error")`` describing the failure and the future raises.
+        """
+
+    @abstractmethod
+    async def feed_audio(self, chunk: bytes) -> None:
+        """Push a PCM frame to the server.
+
+        ``chunk`` is mono PCM16 little-endian at :attr:`DialogueConfig
+        .sample_rate` (defaults to 16 kHz). Non-blocking: the frame is
+        enqueued for the wire task; the actual network send may lag by
+        a few milliseconds under load.
+        """
+
+    @abstractmethod
+    async def send_text(self, text: str) -> None:
+        """Inject a text message into the conversation (optional path).
+
+        Useful when an external LLM produces the agent reply and we
+        want the server to render it as TTS (when ``modality="audio"``)
+        or just acknowledge it (when ``modality="text"``). Providers
+        that don't expose a text-in channel raise ``NotImplementedError``.
+        """
+
+    @abstractmethod
+    async def interrupt(self) -> None:
+        """User barge-in: cancel in-flight output, keep session open.
+
+        Sends the provider's ``response.cancel`` (or equivalent) event
+        to the server, drains any locally buffered output, and stops the
+        audio player task. The next ``feed_audio`` frame starts a fresh
+        response turn from the server.
+
+        Idempotent: calling twice in a row is a no-op the second time.
+        """
+
+    @abstractmethod
+    async def stop(self) -> str:
+        """End the dialogue and return the final user transcript.
+
+        Suggests the server flush its ASR buffer, waits briefly for the
+        final transcript event, then closes the transport. The returned
+        string is the concatenated final transcripts across all turns of
+        this session (or empty if the server returned no final text).
+        """
+
+    @abstractmethod
+    async def close(self) -> None:
+        """Release any remaining resources (cancel tasks, close sockets).
+
+        Called automatically by :meth:`stop` once the transcript is
+        captured. Safe to call more than once.
+        """

@@ -1,0 +1,32 @@
+{
+  "archive_name": "components",
+  "package_name": "components",
+  "module_count": 389,
+  "sample_files": [
+    "components/AgentProgressLine.py",
+    "components/App.py",
+    "components/ApproveApiKey.py",
+    "components/AutoModeOptInDialog.py",
+    "components/AutoUpdater.py",
+    "components/AutoUpdaterWrapper.py",
+    "components/AwsAuthStatusBox.py",
+    "components/BaseTextInput.py",
+    "components/BashModeProgress.py",
+    "components/BridgeDialog.py",
+    "components/BypassPermissionsModeDialog.py",
+    "components/ChannelDowngradeDialog.py",
+    "components/ClaudeCodeHint/PluginHintMenu.py",
+    "components/ClaudeInChromeOnboarding.py",
+    "components/ClaudeMdExternalIncludesDialog.py",
+    "components/ClickableImageRef.py",
+    "components/CompactSummary.py",
+    "components/ConfigurableShortcutHint.py",
+    "components/ConsoleOAuthFlow.py",
+    "components/ContextSuggestions.py",
+    "components/ContextVisualization.py",
+    "components/CoordinatorAgentStatus.py",
+    "components/CostThresholdDialog.py",
+    "components/CtrlOToExpand.py",
+    "components/CustomSelect/SelectMulti.py"
+  ]
+}

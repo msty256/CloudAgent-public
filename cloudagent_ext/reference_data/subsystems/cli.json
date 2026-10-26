@@ -1,0 +1,26 @@
+{
+  "archive_name": "cli",
+  "package_name": "cli",
+  "module_count": 19,
+  "sample_files": [
+    "cli/exit.py",
+    "cli/handlers/agents.py",
+    "cli/handlers/auth.py",
+    "cli/handlers/autoMode.py",
+    "cli/handlers/mcp.py",
+    "cli/handlers/plugins.py",
+    "cli/handlers/util.py",
+    "cli/ndjsonSafeStringify.py",
+    "cli/print.py",
+    "cli/remoteIO.py",
+    "cli/structuredIO.py",
+    "cli/transports/HybridTransport.py",
+    "cli/transports/SSETransport.py",
+    "cli/transports/SerialBatchEventUploader.py",
+    "cli/transports/WebSocketTransport.py",
+    "cli/transports/WorkerStateUploader.py",
+    "cli/transports/ccrClient.py",
+    "cli/transports/transportUtils.py",
+    "cli/update.py"
+  ]
+}

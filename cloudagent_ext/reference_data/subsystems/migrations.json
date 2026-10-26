@@ -1,0 +1,18 @@
+{
+  "archive_name": "migrations",
+  "package_name": "migrations",
+  "module_count": 11,
+  "sample_files": [
+    "migrations/migrateAutoUpdatesToSettings.py",
+    "migrations/migrateBypassPermissionsAcceptedToSettings.py",
+    "migrations/migrateEnableAllProjectMcpServersToSettings.py",
+    "migrations/migrateFennecToOpus.py",
+    "migrations/migrateLegacyOpusToCurrent.py",
+    "migrations/migrateOpusToOpus1m.py",
+    "migrations/migrateReplBridgeEnabledToRemoteControlAtStartup.py",
+    "migrations/migrateSonnet1mToSonnet45.py",
+    "migrations/migrateSonnet45ToSonnet46.py",
+    "migrations/resetAutoModeOptInForDefaultOffer.py",
+    "migrations/resetProToOpusDefault.py"
+  ]
+}

@@ -1,0 +1,20 @@
+# ---------------------------------------------------------------------------
+# This file is part of CloudAgent.
+# Copyright (c) 2026 CloudAgent Authors
+# Licensed under the MIT License. See the LICENSE file in the project root.
+# ---------------------------------------------------------------------------
+
+include LICENSE
+include README.md
+include uv.lock
+
+# --- cloudagent_ext: reference_data JSON, skill resources, community-radar templates
+recursive-include cloudagent_ext *.json *.j2 *.template *.md *.txt *.toml
+recursive-include cloudagent_ext *.html *.css *.js *.sql *.yaml *.yml
+
+# --- extensions: orchestrator/sop_converter templates, visualizer assets
+recursive-include extensions *.json *.j2 *.template *.md *.txt *.toml
+recursive-include extensions *.html *.css *.js *.sql *.yaml *.yml
+
+# --- telemetry: packaged JSON/TOML schema data
+recursive-include telemetry *.json *.j2 *.template *.md *.txt *.toml

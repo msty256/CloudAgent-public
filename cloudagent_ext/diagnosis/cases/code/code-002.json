@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "case_id": "code-002",
+  "domain": "code",
+  "scenario": "augment_dispatch_all_domains",
+  "input": {
+    "question": "诊断子代理的结果回注主 Agent 之前，会不会做协议校验后处理？覆盖哪些域？",
+    "context": {
+      "symbols": ["augment_agent_result", "_AUGMENTERS"],
+      "files": ["cloudagent_ext/tool_system/tools/agent.py"]
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "P3.6 起 _AUGMENTERS 按 agent_type 统一分派，sql/code/log 三域都经过协议校验后处理，不再存在只覆盖 sql 域的硬编码",
+        "match_terms": ["_AUGMENTERS"],
+        "severity": "none"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "find_symbol",
+        "observation_terms": ["_AUGMENTERS", "agent.py"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "find_symbol", "input": {"name": "_AUGMENTERS"}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "无需改动（三域已统一分派）",
+        "match_terms": ["无需"]
+      }
+    ],
+    "forbidden_findings": ["仅 sql 域有增强", "code/log 无后处理"]
+  },
+  "expected_agents": ["code-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "分析对象=本仓库。角色已由阳性缺陷案例转为回归守卫：守护 P3.6 的三域分派，防止旧结论复活。事实核实 2026-10-20：agent.py:897-907 的 _AUGMENTERS 含 sql-diagnosis / code-diagnosis / log-diagnosis 三个键。"
+}

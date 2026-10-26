@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "case_id": "sync-004",
+  "domain": "sync",
+  "scenario": "absent_on_both_sides_no_mq_evidence",
+  "input": {
+    "question": "设备 id=999 在上下游都查不到，是不是 Kafka 断了？",
+    "context": {
+      "db_note": "primary=cloudagent_sim（上游），secondary=cloudagent_sim_downstream（下游）",
+      "tables": ["public.devices"],
+      "business_key": "id",
+      "hint": "先确认数据本身是否存在"
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "上游与下游的 devices 表中均无 id=999 的记录：数据在源头就不存在，不构成同步问题",
+        "match_terms": ["devices", "999"],
+        "severity": "none"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "query_table_rows",
+        "observation_terms": ["devices"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "query_table_rows", "input": {"table": "devices", "where": {"id": 999}, "target": "primary"}}
+      },
+      {
+        "tool": "query_table_rows",
+        "observation_terms": ["devices"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "query_table_rows", "input": {"table": "devices", "where": {"id": 999}, "target": "secondary"}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "回到数据产生侧确认该设备是否上报过；若确需判断消息链问题，需补充消费位点/积压/重试主题等 MQ 侧证据",
+        "match_terms": ["上报", "MQ"]
+      }
+    ],
+    "forbidden_findings": ["断言 Kafka 故障", "Kafka 是根因", "消息丢失"]
+  },
+  "expected_agents": ["sql-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "红线案例：无 MQ 证据时不得断言队列故障。devices 两侧各 50 行（id 1..50），id=999 不存在。"
+}

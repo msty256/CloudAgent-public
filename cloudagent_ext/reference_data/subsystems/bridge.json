@@ -1,0 +1,32 @@
+{
+  "archive_name": "bridge",
+  "package_name": "bridge",
+  "module_count": 31,
+  "sample_files": [
+    "bridge/bridgeApi.py",
+    "bridge/bridgeConfig.py",
+    "bridge/bridgeDebug.py",
+    "bridge/bridgeEnabled.py",
+    "bridge/bridgeMain.py",
+    "bridge/bridgeMessaging.py",
+    "bridge/bridgePermissionCallbacks.py",
+    "bridge/bridgePointer.py",
+    "bridge/bridgeStatusUtil.py",
+    "bridge/bridgeUI.py",
+    "bridge/capacityWake.py",
+    "bridge/codeSessionApi.py",
+    "bridge/createSession.py",
+    "bridge/debugUtils.py",
+    "bridge/envLessBridgeConfig.py",
+    "bridge/flushGate.py",
+    "bridge/inboundAttachments.py",
+    "bridge/inboundMessages.py",
+    "bridge/initReplBridge.py",
+    "bridge/jwtUtils.py",
+    "bridge/pollConfig.py",
+    "bridge/pollConfigDefaults.py",
+    "bridge/remoteBridgeCore.py",
+    "bridge/replBridge.py",
+    "bridge/replBridgeHandle.py"
+  ]
+}

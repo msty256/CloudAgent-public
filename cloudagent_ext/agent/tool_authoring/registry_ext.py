@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# ---------------------------------------------------------------------------
+# This file is part of CloudAgent.
+# Copyright (c) 2026 CloudAgent Authors
+# Licensed under the MIT License. See the LICENSE file in the project root.
+# ---------------------------------------------------------------------------
+
+"""Registry extension — tracks agent-created tools at runtime."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cloudagent_ext.tool_system.build_tool import Tool
+
+# In-memory store of agent-created tools, keyed by name.
+# Persisted to disk via ``persistence.py`` and restored on startup.
+_AGENT_CREATED_TOOLS: dict[str, Tool] = {}
+
+
+def add_tool(tool: Tool) -> None:
+    """Register an agent-created tool in the runtime registry."""
+    _AGENT_CREATED_TOOLS[tool.name] = tool
+
+
+def get_tool(name: str) -> Tool | None:
+    """Look up an agent-created tool by name."""
+    return _AGENT_CREATED_TOOLS.get(name)
+
+
+def list_tools() -> list[Tool]:
+    """Return all agent-created tools."""
+    return list(_AGENT_CREATED_TOOLS.values())
+
+
+def remove_tool(name: str) -> bool:
+    """Remove an agent-created tool. Returns True if it existed."""
+    return _AGENT_CREATED_TOOLS.pop(name, None) is not None
+
+
+def clear() -> None:
+    """Remove all agent-created tools (used in tests / resets)."""
+    _AGENT_CREATED_TOOLS.clear()

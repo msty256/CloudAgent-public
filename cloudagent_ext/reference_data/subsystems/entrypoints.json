@@ -1,0 +1,15 @@
+{
+  "archive_name": "entrypoints",
+  "package_name": "entrypoints",
+  "module_count": 8,
+  "sample_files": [
+    "entrypoints/agent_types.py",
+    "entrypoints/cli.py",
+    "entrypoints/init.py",
+    "entrypoints/mcp.py",
+    "entrypoints/sandboxTypes.py",
+    "entrypoints/sdk/controlSchemas.py",
+    "entrypoints/sdk/coreSchemas.py",
+    "entrypoints/sdk/coreTypes.py"
+  ]
+}

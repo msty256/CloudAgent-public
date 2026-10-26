@@ -1,0 +1,451 @@
+[build-system]
+requires = ["setuptools>=77.0.3", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cloudagent"
+# version is dynamic - read from cloudagent_ext._version.BASE_VERSION (hand-bumped SemVer)
+dynamic = ["version"]
+description = "CloudAgent — an extensible Python agent runtime with tools, skills and MCP integration"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11, <3.14"
+authors = [
+    {name = "CloudAgent Authors"}
+]
+keywords = [
+    "agent", "cli", "ai", "llm", "mcp", "anthropic",
+    "openai", "glm", "k8s", "sql",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+dependencies = [
+    "anthropic",
+    "openai",
+    "zhipuai",
+    "python-dotenv",
+    "rich",
+    "prompt-toolkit",
+    "tiktoken>=0.7.0",
+    "textual>=0.79",
+    # YAML frontmatter parser (SKILL.md, agent files, output styles).
+    # Required for nested structures like ``hooks:`` and ``shell:`` to
+    # round-trip through ``cloudagent_ext.skills.frontmatter.parse_frontmatter``.
+    "PyYAML>=6.0",
+    # gitwildmatch path matching for conditional-skill ``paths:`` rules.
+    # The port uses the `ignore` library; ``pathspec`` is the Python
+    # equivalent (full ``**`` recursion + anchoring + negation).
+    "pathspec>=0.11",
+    # Ch16 Phase 0: WebSocket client/server for the CCR bridge (Bridge v2,
+    # Direct Connect, Remote Session). The 14.0 lower bound is required for
+    # the new asyncio API's ``additional_headers`` kwarg; v12/v13 use
+    # ``extra_headers`` and would TypeError against our planned API.
+    "websockets>=14.0",
+    # Ch16 Phase 0: SSE consumer for the CCR v2 SSE read transport. ``httpx``
+    # itself is transitively available via the ``anthropic`` SDK.
+    "httpx-sse>=0.4",
+    # MCP (Model Context Protocol) SDK. ``cloudagent_ext/services/mcp/transport.py``
+    # imports ``mcp.client.{stdio,sse,streamable_http,websocket}`` at module
+    # load — required for cold-start import of the MCP transport layer, not
+    # optional. Without this dep, ``uv sync`` produces an env where
+    # ``bootstrap_mcp_runtime`` ImportErrors before any user code runs.
+    # 1.27.x is the current series; upper bound pinned to <2 to avoid
+    # surprise breaking changes from the upstream 2.x line.
+    "mcp>=1.27.2,<2",
+    # Open source replacement: Pydantic Settings for type-safe config
+    "pydantic-settings>=2.0.0",
+    # Open source replacement: python-frontmatter for parsing SKILL.md / agent files
+    "python-frontmatter>=1.0.0",
+    # Open source replacement: tree-sitter-bash for Bash AST parsing
+    "tree-sitter>=0.25.0",
+    "tree-sitter-bash>=0.25.0",
+    # Open source replacement: GitPython for Git operations
+    "GitPython>=3.1.0",
+    # Open source replacement: LiteLLM for unified Provider layer
+    "litellm>=1.0.0",
+    # Open source replacement: Pluggy for Hook system
+    "pluggy>=1.0.0",
+    # Open source replacement: Outlines for structured output
+    "outlines>=0.0.80",
+    # Image decode/resize/encode for the FileReadTool image pipeline (port
+    # of which uses sharp). Pillow has pure-Python wheels
+    # for all platforms and covers PNG/JPEG/GIF/WebP and palette quantization.
+    # Without this, oversized images get rejected instead of downscaled.
+    "Pillow>=10.0",
+    # upstream-sync: CLI framework.
+    # NOTE: the ``[all]`` extra was dropped upstream in typer 0.16 (its
+    # dependencies became the default install), so requesting it now only
+    # produces a resolution warning.
+    "typer>=0.12.0",
+    # F-??: shell tab completion for the ``cloudagent`` entrypoint
+    "argcomplete>=3.5.0",
+    "jinja2>=3.1.0",
+    # F-88: At-rest encryption of ~/.cloudagent/auth.json via AES-256-GCM
+    # (machine-id derived key, transparent encrypt/decrypt in codex_store).
+    "cryptography>=42.0.0",
+    # F-91~F-95: Multi-Session Visualizer backend
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "build>=1.0.0",
+    "twine>=5.0.0",
+    "pytest>=8.0.0",
+    # ``pyproject.toml`` declares ``asyncio_mode = "auto"`` (below) which
+    # requires the pytest-asyncio plugin. Without it, async tests fail at
+    # run time with "async def functions are not natively supported."
+    "pytest-asyncio>=1.3.0",
+    # F-73: coverage report generation for CI visibility. The current rollout
+    # intentionally does not enforce a minimum coverage percentage.
+    "pytest-cov>=5.0",
+    "ruff>=0.8.0",
+    "pre-commit>=4.0.0",
+    "mypy>=1.13.0,<2",
+    "import-linter>=2.0",
+    "pexpect>=4.9.0",
+    "lark-oapi==1.7.0",
+    "qrcode==7.4.2",
+    # F-REC-M: ANSI-aware cast→mp4 rendering. Tiny pure-Python VTxxx
+    # emulator; tests skip the ANSI render path if it is absent.
+    "pyte>=0.8.0",
+]
+# F-62 Chrome browser automation. ``playwright`` drives a real
+# headless Chromium; ``pillow`` composites screenshot frames into
+# the operation GIF. ``mcp`` is the upstream SDK for the
+# Chrome DevTools MCP server backend. Without this extra, the
+# chrome tools still register — they degrade to a
+# NullChromeController that returns an install-hint error on
+# every call.
+chrome = [
+    "playwright>=1.40",
+    "Pillow>=10.0",
+]
+feishu = [
+    "lark-oapi==1.7.0",
+    "qrcode==7.4.2",
+]
+memory = [
+    "mem0ai==2.0.4",
+    "qdrant-client>=1.18.0,<2",
+    "ollama>=0.6.0,<1",
+    "requests>=2.31.0",
+]
+# P2.2 SQL 诊断：只读数据库访问（psycopg 驱动 + sqlglot 只读 SQL 白名单校验）。
+# 默认安装不引入；使用 DB 工具的环境请安装：pip install -e ".[db]"
+db = [
+    "psycopg[binary]>=3.2",
+    "sqlglot>=25",
+]
+# ``all`` is the catch-all extra consumed by ``install.sh`` (one-click
+# installer). NOTE: an earlier draft used a self-reference
+# (``all = ["cloudagent[dev]"]``) which deadlocks editable
+# installs because pip/setuptools wait for the package to exist on disk to
+# read its metadata, but the package is what's being built. List the deps
+# explicitly instead. Keep the memory dependencies in sync with ``memory`` above.
+all = [
+    "build>=1.0.0",
+    "twine>=5.0.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.8.0",
+    "pre-commit>=4.0.0",
+    "mypy>=1.13.0,<2",
+    "import-linter>=2.0",
+    "pexpect>=4.9.0",
+    "lark-oapi==1.7.0",
+    "qrcode==7.4.2",
+    "pyte>=0.8.0",
+    "mem0ai==2.0.4",
+    "qdrant-client>=1.18.0,<2",
+    "ollama>=0.6.0,<1",
+    "requests>=2.31.0",
+    # fix-sql-diagnosis-tool-provisioning: catch-all must include the DB
+    # extras — the one-click installers sync ``--extra all`` and the
+    # deployed runtime needs psycopg/sqlglot for the SQL diagnosis tools
+    # (missing previously → provisioning failed silently at deploy).
+    "psycopg[binary]>=3.2",
+    "sqlglot>=25",
+]
+
+[project.scripts]
+cloudagent = "cloudagent_ext.cli.main:main"
+
+[project.urls]
+Homepage = "https://github.com/msty256/cloudAgent"
+Repository = "https://github.com/msty256/cloudAgent"
+Documentation = "https://github.com/msty256/cloudAgent#readme"
+
+[tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
+asyncio_mode = "auto"
+# Prepend the project root so pytest imports the worktree's ``cloudagent_ext``
+# rather than the parent repo's editable-install mapping.
+# Include the Plan Graph extension source tree without requiring a second
+# editable install during host integration tests.
+pythonpath = [".", "extensions/lkb/src"]
+markers = [
+    "integration: marks tests as integration (deselect with '-m \"not integration\"')",
+    "linux_only: marks tests that require Linux (auto-skipped on macOS/Windows)",
+    "requires_console: marks tests that need a real terminal; auto-skipped when prompt_toolkit cannot build a Win32 console output",
+    "perf_sensitive: marks tests with wall-clock budgets calibrated on an idle Linux runner; auto-skipped on non-POSIX platforms",
+    "timeout(seconds): documents a per-test timeout budget",
+]
+filterwarnings = [
+    # Ch16 Phase 0 (WI-0.2/0.3) + ch01 round-2 P3: scripts/audit/remote_runtime
+    # emits DeprecationWarnings on import (the remote_runtime stub was
+    # relocated to scripts/audit/ when audit scaffolding moved).
+    # Existing tests still exercise that module; suppress so
+    # ``pytest -W error,DeprecationWarning`` doesn't break the pre-existing
+    # test suite.
+    "ignore::DeprecationWarning:scripts.audit.remote_runtime",
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "cloudagent_ext._version.__version__"}
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = [
+    ".venv",
+    ".git",
+    ".pytest_cache",
+    ".mypy_cache",
+    "reference_projects",
+    "demos",
+    # Bundled workflow scripts are executed by the workflow DSL engine, not
+    # imported as Python: the engine injects ``agent`` / ``parallel`` /
+    # ``phase`` / ``log`` / ``args`` into the module namespace and the body is
+    # a top-level ``await`` sequence. Ruff (correctly) reports those as
+    # F821/F704/F706, but they are not legal-Python defects.
+    "cloudagent_ext/workflow/bundled",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ruff.lint]
+# Start with correctness-oriented rules that can be blocking without forcing
+# a repo-wide style cleanup. Formatting is still checked on changed files in CI.
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.ruff.lint.per-file-ignores]
+# Modules whose public names are materialized by a module-level ``__getattr__``
+# (lazy re-export surfaces). Ruff cannot see those as static definitions, so
+# ``__all__`` would otherwise trip F822.
+"cloudagent_ext/__init__.py" = ["F822"]
+"cloudagent_ext/auth/__init__.py" = ["F822"]
+"cloudagent_ext/bridge/__init__.py" = ["F822"]
+"cloudagent_ext/buddy/__init__.py" = ["F822"]
+"cloudagent_ext/entrypoints/__init__.py" = ["F822"]
+"cloudagent_ext/feature_gate/__init__.py" = ["F822"]
+"cloudagent_ext/memdir/__init__.py" = ["F822"]
+"cloudagent_ext/permissions/handler.py" = ["F822"]
+"cloudagent_ext/providers/__init__.py" = ["F822"]
+"cloudagent_ext/providers/_upstream_catalog.py" = ["F822"]
+"cloudagent_ext/providers/anthropic_provider.py" = ["F822"]
+"cloudagent_ext/providers/native/__init__.py" = ["F822"]
+"cloudagent_ext/query/__init__.py" = ["F822"]
+"cloudagent_ext/repl/__init__.py" = ["F822"]
+"cloudagent_ext/server/agent_server.py" = ["F822"]
+"cloudagent_ext/services/voice/__init__.py" = ["F822"]
+"cloudagent_ext/skills/__init__.py" = ["F822"]
+"cloudagent_ext/tui/__init__.py" = ["F822"]
+"cloudagent_ext/tui/screens/__init__.py" = ["F822"]
+
+[tool.coverage.run]
+branch = true
+source = ["cloudagent_ext", "extensions"]
+omit = [
+    "tests/*",
+    "scripts/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 0
+
+[tool.mypy]
+python_version = "3.10"
+platform = "linux"
+explicit_package_bases = true
+ignore_missing_imports = true
+warn_unused_ignores = false
+warn_return_any = false
+no_implicit_optional = false
+exclude = [
+    "^demos/",
+]
+
+# F-73: mypy is a blocking CI gate again. These modules are the explicit
+# historical debt baseline discovered while reopening the gate; keep this list
+# shrinking as the older runtime, TUI, orchestration, and facade layers are
+# typed. Modules outside this baseline fail CI on new type errors.
+[[tool.mypy.overrides]]
+module = [
+    "cloudagent_ext.agent.*",
+    "cloudagent_ext.away_summary.*",
+    "cloudagent_ext.cli.*",
+    "cloudagent_ext.command_system.*",
+    "cloudagent_ext.context_system.*",
+    "cloudagent_ext.cron_system.*",
+    "cloudagent_ext.dreaming.*",
+    "cloudagent_ext.entrypoints.*",
+    "cloudagent_ext.frontend.*",
+    "cloudagent_ext.hooks.*",
+    "cloudagent_ext.latent_memory.*",
+    "cloudagent_ext.memory.*",
+    "cloudagent_ext.permissions.*",
+    "cloudagent_ext.providers.*",
+    "cloudagent_ext.repl.*",
+    "cloudagent_ext.runtime.*",
+    "cloudagent_ext.skills.*",
+    "cloudagent_ext.tool_system.*",
+    "cloudagent_ext.tui.*",
+    "cloudagent_ext.utils.*",
+    "extensions.capabilities.*",
+    "extensions.orchestrator.*",
+    "extensions.sop_converter.*",
+    "extensions.remote_api.*",
+    "extensions.visualizer.*",
+    "cloudagent_ext.agent.*",
+    "cloudagent_ext.bridge.*",
+    "cloudagent_ext.hooks.*",
+    "cloudagent_ext.memdir.*",
+    "cloudagent_ext.permissions.*",
+    "cloudagent_ext.providers.*",
+    "cloudagent_ext.query.*",
+    "cloudagent_ext.remote.*",
+    "cloudagent_ext.server.*",
+    "cloudagent_ext.services.*",
+    "cloudagent_ext.tasks.*",
+    "cloudagent_ext.token_estimation",
+    "cloudagent_ext.tool_system.*",
+    "cloudagent_ext.types.*",
+    "cloudagent_ext.upstreamproxy.*",
+    "telemetry.*",
+    # --- single-layering follow-up: modules that were not on the original
+    # baseline list (or were introduced by the src/ -> cloudagent_ext/ merge)
+    # but report pre-existing type errors. Recorded here so mypy stays a
+    # blocking gate on new code; shrink this list as the modules get typed.
+    "cloudagent_ext.community_radar.*",
+    "cloudagent_ext.configuration.*",
+    "cloudagent_ext.debug.*",
+    "cloudagent_ext.diagnostics.*",
+    "cloudagent_ext.eco.*",
+    "cloudagent_ext.feature_gate.*",
+    "cloudagent_ext.goal.*",
+    "cloudagent_ext.intent_forecast.*",
+    "cloudagent_ext.multimodel.*",
+    "cloudagent_ext.native.*",
+    "cloudagent_ext.orchestrator.*",
+    "cloudagent_ext.plugins.*",
+    "cloudagent_ext.session_intelligence.*",
+    "cloudagent_ext.transports.*",
+    "cloudagent_ext.workflow.bundled.*",
+    "extensions.api.*",
+    "extensions.daemon.*",
+    "extensions.ports.*",
+    "extensions.recording.*",
+    "extensions.orchestrator_runtime.*",
+]
+ignore_errors = true
+
+[tool.setuptools.packages.find]
+# ``lkb`` is a standalone ``src`` package required at runtime.
+# Include its source root in the main distribution; otherwise an editable or
+# wheel install of CloudAgent fails during CLI bootstrap with
+# ``ModuleNotFoundError: No module named 'lkb'``.
+where = [".", "extensions/lkb/src"]
+# TODO: 正式发布前将 "telemetry*" 从 include 中去除，
+# 使 telemetry 包外置为独立可选的 pip install 依赖，
+# 不作为 cloudagent 主包的强制组成部分。
+include = ["cloudagent_ext*", "extensions*", "telemetry*", "lkb*"]
+exclude = [
+    # ``extensions/lkb/src`` is also a package-discovery root. Exclude
+    # its accidental namespace spelling so the same sources are shipped
+    # only as the intended top-level ``lkb`` package.
+    "extensions.lkb.src.lkb*",
+]
+
+[tool.setuptools.package-data]
+"cloudagent_ext.skills.bundled.orchestrator_resources" = [
+    "SKILL.md",
+    "references/*.md",
+    "references/*.template",
+]
+"cloudagent_ext.skills.bundled.spec_audit_resources" = [
+    "SKILL.md",
+    "agents/*.yaml",
+    "assets/templates/*.md",
+    "references/*.md",
+    "scripts/*.py",
+]
+"cloudagent_ext.skills.bundled.sql_optimization_resources" = [
+    "SKILL.md",
+]
+"cloudagent_ext.diagnosis.cases" = [
+    "sql/*.json",
+]
+"cloudagent_ext.diagnosis.evaluation" = [
+    "fixtures/*.json",
+]
+
+# ---------------------------------------------------------------------------
+# import-linter — DAG-leaf enforcement for cloudagent_ext/bootstrap/state.py
+# ---------------------------------------------------------------------------
+# Bootstrap state is a DAG leaf — it cannot import from feature subsystems
+# (``cloudagent_ext/tui``, ``cloudagent_ext/repl``, ``cloudagent_ext/agent``,
+# ``cloudagent_ext/services``, ``cloudagent_ext/query``,
+# ``cloudagent_ext/context_system``, ``cloudagent_ext/permissions``,
+# ``cloudagent_ext/command_system``, ``cloudagent_ext/tool_system``,
+# ``cloudagent_ext/coordinator``). The contract below enforces
+# this on every commit when ``lint-imports`` runs in CI.
+# To run locally: ``pip install -e ".[dev]" && lint-imports``.
+[tool.importlinter]
+root_package = "cloudagent_ext"
+
+[[tool.importlinter.contracts]]
+name = "bootstrap/state.py cannot import from feature subsystems (DAG-leaf rule)"
+type = "forbidden"
+source_modules = ["cloudagent_ext.bootstrap.state"]
+forbidden_modules = [
+    "cloudagent_ext.tui",
+    "cloudagent_ext.repl",
+    "cloudagent_ext.agent",
+    "cloudagent_ext.services",
+    "cloudagent_ext.query",
+    "cloudagent_ext.context_system",
+    "cloudagent_ext.permissions",
+    "cloudagent_ext.command_system",
+    "cloudagent_ext.tool_system",
+    "cloudagent_ext.coordinator",
+    "cloudagent_ext.providers",
+    "cloudagent_ext.tasks",
+    "cloudagent_ext.bridge",
+    "cloudagent_ext.remote",
+    "cloudagent_ext.skills",
+]
+# ch01 round-2 P3: the audit-only ``commands`` module was relocated to
+# ``scripts/audit/commands.py``. The production command surface is
+# ``cloudagent_ext/command_system/``.
+
+# TODO: add a positive-allowlist (kept) contract restricting bootstrap to
+# import only from ``cloudagent_ext.utils.signal`` and a small set of leaf
+# utilities. The forbidden contract above misses the case where someone adds
+# ``from cloudagent_ext.utils.tui_helpers import foo`` to bootstrap —
+# ``cloudagent_ext.utils`` is not in the blocklist. ``import-linter`` doesn't have a perfect positive-
+# allowlist primitive; the closest is the ``independence`` contract or a
+# custom contract. Plan §P1.0 acknowledged the ~30 min research cost.
+# Tracking as a Phase-2 follow-up.

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "case_id": "sync-005",
+  "domain": "sync",
+  "scenario": "all_consistent_negative",
+  "input": {
+    "question": "有人反馈设备数据上下游对不上，帮我核一下 devices 表在下游是不是缺数据。",
+    "context": {
+      "db_note": "primary=cloudagent_sim（上游），secondary=cloudagent_sim_downstream（下游）",
+      "tables": ["public.devices"],
+      "business_key": "id"
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "devices 表上下游均为 50 行且 id 一致：已正常同步，未发现缺数据",
+        "match_terms": ["devices", "50"],
+        "severity": "none"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "query_table_rows",
+        "observation_terms": ["devices"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "query_table_rows", "input": {"table": "devices", "target": "secondary"}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "无需修复；如反馈仍存在，建议提供具体设备 id 后再核查",
+        "match_terms": ["无需", "设备 id"]
+      }
+    ],
+    "forbidden_findings": ["同步失败", "数据缺失", "同步延迟"]
+  },
+  "expected_agents": ["sql-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "阴性对照：devices 两侧各 50 行（tests/fixtures/sql/sync_seed_*.sql）。用于惩罚过度诊断——证据正常时不得编造根因。"
+}

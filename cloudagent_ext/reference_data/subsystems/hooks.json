@@ -1,0 +1,32 @@
+{
+  "archive_name": "hooks",
+  "package_name": "hooks",
+  "module_count": 104,
+  "sample_files": [
+    "hooks/fileSuggestions.py",
+    "hooks/notifs/useAutoModeUnavailableNotification.py",
+    "hooks/notifs/useCanSwitchToExistingSubscription.py",
+    "hooks/notifs/useDeprecationWarningNotification.py",
+    "hooks/notifs/useFastModeNotification.py",
+    "hooks/notifs/useIDEStatusIndicator.py",
+    "hooks/notifs/useInstallMessages.py",
+    "hooks/notifs/useLspInitializationNotification.py",
+    "hooks/notifs/useMcpConnectivityStatus.py",
+    "hooks/notifs/useModelMigrationNotifications.py",
+    "hooks/notifs/useNpmDeprecationNotification.py",
+    "hooks/notifs/usePluginAutoupdateNotification.py",
+    "hooks/notifs/usePluginInstallationStatus.py",
+    "hooks/notifs/useRateLimitWarningNotification.py",
+    "hooks/notifs/useSettingsErrors.py",
+    "hooks/notifs/useStartupNotification.py",
+    "hooks/notifs/useTeammateShutdownNotification.py",
+    "hooks/renderPlaceholder.py",
+    "hooks/toolPermission/PermissionContext.py",
+    "hooks/toolPermission/handlers/coordinatorHandler.py",
+    "hooks/toolPermission/handlers/interactiveHandler.py",
+    "hooks/toolPermission/handlers/swarmWorkerHandler.py",
+    "hooks/toolPermission/permissionLogging.py",
+    "hooks/unifiedSuggestions.py",
+    "hooks/useAfterFirstRender.py"
+  ]
+}

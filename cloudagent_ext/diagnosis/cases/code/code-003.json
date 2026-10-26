@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "case_id": "code-003",
+  "domain": "code",
+  "scenario": "evidence_id_generator_inconsistent",
+  "input": {
+    "question": "证据 id 的生成规则与统一诊断协议契约是否一致？",
+    "context": {
+      "files": ["cloudagent_ext/diagnosis/models.py"],
+      "symbols": ["new_evidence_id"]
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "new_evidence_id() 生成 ev-<12hex>，与契约要求的 ev:<domain>:<seq> 命名空间不一致（生成器与契约各说各话）",
+        "match_terms": ["new_evidence_id", "ev-"],
+        "severity": "primary"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "find_symbol",
+        "observation_terms": ["new_evidence_id", "ev-"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "find_symbol", "input": {"name": "new_evidence_id"}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "统一生成器（增加 domain 参数）或明确旧格式的兼容边界",
+        "match_terms": ["生成器", "domain"]
+      }
+    ],
+    "forbidden_findings": ["新旧格式已自动统一"]
+  },
+  "expected_agents": ["code-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "分析对象=本仓库；事实核实 2026-10-19（models.py:123 的 ev- 前缀）"
+}

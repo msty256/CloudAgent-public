@@ -1,0 +1,12 @@
+{
+  "archive_name": "vim",
+  "package_name": "vim",
+  "module_count": 5,
+  "sample_files": [
+    "vim/motions.py",
+    "vim/operators.py",
+    "vim/textObjects.py",
+    "vim/transitions.py",
+    "vim/types.py"
+  ]
+}

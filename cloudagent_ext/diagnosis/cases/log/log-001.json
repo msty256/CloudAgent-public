@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "case_id": "log-001",
+  "domain": "log",
+  "scenario": "first_error_downstream",
+  "input": {
+    "question": "订单查询报错：请从日志判断最早失败点在哪、是哪个服务导致的？",
+    "context": {
+      "log_root_note": "仿真日志（cloudagent_ext.diagnosis.log.fixtures.sim_logs.write_sim_logs 生成）",
+      "trace_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "time_from": "2026-10-18 09:59:00.000",
+      "time_to": "2026-10-18 10:01:00.000"
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "最早失败点在 svc-b 的 Repository（java.lang.NullPointerException: tenant config missing），svc-a 的 feign 异常是级联结果",
+        "match_terms": ["svc-b", "NullPointerException"],
+        "severity": "primary"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "correlate_events",
+        "observation_terms": ["svc-b", "svc-a"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "correlate_events", "input": {"trace_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90"}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "以 svc-b 的 NPE 为首异常继续排查（tenant 配置缺失），并核对 svc-a 的级联异常",
+        "match_terms": ["svc-b", "配置"]
+      }
+    ],
+    "forbidden_findings": ["根因在 svc-a"]
+  },
+  "expected_agents": ["log-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "输入=仿真日志（确定性）；事实核实 2026-10-19（TRACE_FULL 链：svc-b 首异常 10:00:00.100 → svc-a 级联 10:00:00.200）"
+}

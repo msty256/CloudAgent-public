@@ -1,0 +1,13 @@
+{
+  "archive_name": "buddy",
+  "package_name": "buddy",
+  "module_count": 6,
+  "sample_files": [
+    "buddy/CompanionSprite.py",
+    "buddy/companion.py",
+    "buddy/prompt.py",
+    "buddy/sprites.py",
+    "buddy/types.py",
+    "buddy/useBuddyNotification.py"
+  ]
+}

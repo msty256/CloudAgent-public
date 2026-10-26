@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "case_id": "log-004",
+  "domain": "log",
+  "scenario": "cross_hour_window",
+  "input": {
+    "question": "时间窗下界为 2026-10-18 10:00:00.000 时，09:59:58 的请求记录是否应被检索到？",
+    "context": {
+      "log_root_note": "仿真日志（write_sim_logs 生成）",
+      "time_from": "2026-10-18 10:00:00.000",
+      "time_to": "2026-10-18 10:01:00.000"
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "时间窗按 datetime 比较：09:59:58 早于下界 10:00:00，不在窗口内（不得因字符串比较误判为更晚）",
+        "match_terms": ["09:59:58", "窗口"],
+        "severity": "primary"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "search_logs",
+        "observation_terms": ["10:00:00", "窗口"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "search_logs", "input": {"time_from": "2026-10-18 10:00:00.000", "time_to": "2026-10-18 10:01:00.000"}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "按 datetime 比较说明窗口边界（09:59:58 不在窗口内）",
+        "match_terms": ["datetime", "边界"]
+      }
+    ],
+    "forbidden_findings": ["09:59:58 在 10:00 之后"]
+  },
+  "expected_agents": ["log-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "输入=仿真日志；事实核实 2026-10-19（fixture 含 09:59:58 与 10:00:00 跨小时事件）"
+}

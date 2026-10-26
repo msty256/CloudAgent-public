@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# ---------------------------------------------------------------------------
+# This file is part of CloudAgent.
+# Copyright (c) 2026 CloudAgent Authors
+# Licensed under the MIT License. See the LICENSE file in the project root.
+# ---------------------------------------------------------------------------
+
+"""Bridge permission callbacks Protocol.
+Defines the bridge-side surface for handling permission requests routed
+from the server: a ``BridgePermissionResponse`` payload (``allow`` /
+``deny`` with optional input rewrite + updated permissions), a type guard
+for validating parsed wire payloads, and a ``BridgePermissionCallbacks``
+Protocol bundling the send/receive surface that orchestrators wire to the
+transport.
+The richer ``AllowResponse``/``DenyResponse`` discriminated union (used
+post-parse) lives in ``messaging.py``; this module is the lower-level
+TypedDict + type-guard layer.
+Originally lived at
+``src/bridge/bridge_permission_callbacks.py``; moved to ``cloudagent_ext/`` during the single-layering
+refactor. The ``src/`` compatibility facade was removed along with it,
+so import the ``cloudagent_ext`` path directly.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable, Protocol, TypedDict, TypeGuard
+
+
+class BridgePermissionResponse(TypedDict, total=False):
+    """Permission response payload as it appears on the wire.
+    ``behavior`` is required; the other fields are optional and only meaningful
+    when ``behavior == 'allow'`` (updatedInput / updatedPermissions) or
+    ``'deny'`` (message).
+    **camelCase field names are intentional**: this TypedDict is the
+    *pre-normalization* wire shape sent by the claude.ai web app. The
+    *post-normalization* discriminated union (``AllowResponse`` /
+    ``DenyResponse`` in ``messaging.py``) uses snake_case Python idioms.
+    The router (``messaging.normalize_control_message_keys``) converts
+    between the two.
+    """
+
+    behavior: str  # 'allow' | 'deny'
+    updatedInput: dict[str, Any]
+    updatedPermissions: list[dict[str, Any]]
+    message: str
+
+
+def is_bridge_permission_response(
+    value: object,
+) -> TypeGuard[BridgePermissionResponse]:
+    """Type guard for a parsed control_response payload.
+    . Checks the required ``behavior``
+    discriminant rather than using an unsafe cast.
+    """
+    if not isinstance(value, dict):
+        return False
+    behavior = value.get("behavior")
+    return behavior in ("allow", "deny")
+
+
+class BridgePermissionCallbacks(Protocol):
+    """Send/receive surface for permission requests.
+    . Wired by orchestrators to a
+    transport (``ReplBridgeHandle``) and a request registry. Implementations
+    are stateful (the ``on_response`` handler registry); the Protocol just
+    declares the surface.
+    """
+
+    def send_request(
+        self,
+        request_id: str,
+        tool_name: str,
+        input: dict[str, Any],  # pylint: disable=redefined-builtin
+        tool_use_id: str,
+        description: str,
+        permission_suggestions: list[dict[str, Any]] | None = None,
+        blocked_path: str | None = None,
+    ) -> None:
+        raise NotImplementedError()
+
+    def send_response(self, request_id: str, response: BridgePermissionResponse) -> None:
+        raise NotImplementedError()
+
+    def cancel_request(self, request_id: str) -> None:
+        """Cancel a pending control_request so the web app can dismiss its prompt."""
+
+    def on_response(
+        self,
+        request_id: str,
+        handler: Callable[[BridgePermissionResponse], None],
+    ) -> Callable[[], None]:
+        """Register a one-shot response handler. Returns an unsubscribe callable."""
+
+
+__all__ = [
+    "BridgePermissionCallbacks",
+    "BridgePermissionResponse",
+    "is_bridge_permission_response",
+]

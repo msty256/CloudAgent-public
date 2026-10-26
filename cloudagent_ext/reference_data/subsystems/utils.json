@@ -1,0 +1,32 @@
+{
+  "archive_name": "utils",
+  "package_name": "utils",
+  "module_count": 564,
+  "sample_files": [
+    "utils/CircularBuffer.py",
+    "utils/Cursor.py",
+    "utils/QueryGuard.py",
+    "utils/Shell.py",
+    "utils/ShellCommand.py",
+    "utils/abortController.py",
+    "utils/activityManager.py",
+    "utils/advisor.py",
+    "utils/agentContext.py",
+    "utils/agentId.py",
+    "utils/agentSwarmsEnabled.py",
+    "utils/agenticSessionSearch.py",
+    "utils/analyzeContext.py",
+    "utils/ansiToPng.py",
+    "utils/ansiToSvg.py",
+    "utils/api.py",
+    "utils/apiPreconnect.py",
+    "utils/appleTerminalBackup.py",
+    "utils/argumentSubstitution.py",
+    "utils/array.py",
+    "utils/asciicast.py",
+    "utils/attachments.py",
+    "utils/attribution.py",
+    "utils/auth.py",
+    "utils/authFileDescriptor.py"
+  ]
+}

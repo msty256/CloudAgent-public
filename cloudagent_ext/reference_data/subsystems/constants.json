@@ -1,0 +1,28 @@
+{
+  "archive_name": "constants",
+  "package_name": "constants",
+  "module_count": 21,
+  "sample_files": [
+    "constants/apiLimits.py",
+    "constants/betas.py",
+    "constants/common.py",
+    "constants/cyberRiskInstruction.py",
+    "constants/errorIds.py",
+    "constants/figures.py",
+    "constants/files.py",
+    "constants/github-app.py",
+    "constants/keys.py",
+    "constants/messages.py",
+    "constants/oauth.py",
+    "constants/outputStyles.py",
+    "constants/product.py",
+    "constants/prompts.py",
+    "constants/spinnerVerbs.py",
+    "constants/system.py",
+    "constants/systemPromptSections.py",
+    "constants/toolLimits.py",
+    "constants/tools.py",
+    "constants/turnCompletionVerbs.py",
+    "constants/xml.py"
+  ]
+}

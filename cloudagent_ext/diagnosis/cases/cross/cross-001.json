@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "case_id": "cross-001",
+  "domain": "cross",
+  "scenario": "log_to_code_handoff",
+  "input": {
+    "question": "订单查询报错：先从日志定位最早失败点，再判断是否需要代码调查。",
+    "context": {
+      "log_root_note": "仿真日志（cloudagent_ext.diagnosis.log.fixtures.sim_logs.write_sim_logs 生成）",
+      "trace_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "symbols": ["resolveTenant"],
+      "symbols_note": "该符号只出现在仿真日志文本里；本仓库不含 svc-b 的 Java 源码，代码调查只能确认“查不到实现”，不能定位到具体判空缺失",
+      "files": ["cloudagent_ext/diagnosis/"]
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "最早失败点在 svc-b 的 Repository（java.lang.NullPointerException: tenant config missing），svc-a 的 feign 异常是级联",
+        "match_terms": ["svc-b"],
+        "severity": "primary"
+      },
+      {
+        "description": "需进一步检查代码中 tenant 配置读取路径（Repository.resolveTenant），确认空值来源",
+        "match_terms": ["resolveTenant"],
+        "severity": "secondary"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "correlate_events",
+        "observation_terms": ["svc-b", "svc-a"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "correlate_events", "input": {"trace_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90"}}
+      },
+      {
+        "tool": "find_symbol",
+        "observation_terms": ["resolveTenant"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "find_symbol", "input": {"name": "resolveTenant"}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "以 svc-b 的 NPE 为首异常，追加一次 code-diagnosis 检查 tenant 配置读取路径",
+        "match_terms": ["code-diagnosis", "svc-b"]
+      }
+    ],
+    "forbidden_findings": ["根因在 svc-a", "无需代码调查"]
+  },
+  "expected_agents": ["log-diagnosis", "code-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "跨域 e2e；输入=仿真日志 + 本仓库符号检索。事实核实 2026-10-20：本仓库不含 Java 源码（无 Repository / TenantConfig 实现），resolveTenant 只出现在仿真日志与离线夹具中；required_evidence 的 check 是 tool_called（只校验“调用了 find_symbol 且入参匹配”，不要求命中），因此“扫描后未找到 resolveTenant”同样满足锚点。若要验证真实跨域闭环，需另把 svc-b 源码纳入代码根。"
+}

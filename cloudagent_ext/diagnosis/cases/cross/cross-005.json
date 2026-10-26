@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "case_id": "cross-005",
+  "domain": "cross",
+  "scenario": "capacity_sync_timeout",
+  "input": {
+    "question": "设备容量同步任务偶发超时。请判断是单设备数据量过大还是并行线程池配置不当。",
+    "context": {
+      "trace_id": "e5f60718293a4b5c6d7e8f90a1b2c3d4",
+      "symbols": [
+        "CapacitySyncWorker",
+        "awaitAll"
+      ],
+      "files": [
+        "cloudagent_ext/diagnosis/"
+      ]
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "并行线程池固定 4 线程等待全部完成后统一写库，单批设备数上升时整体超过超时阈值",
+        "match_terms": [
+          "线程池",
+          "超时"
+        ],
+        "severity": "primary"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "search_logs",
+        "observation_terms": [
+          "timeout"
+        ],
+        "required": true
+      },
+      {
+        "tool": "read_file",
+        "observation_terms": [
+          "awaitAll"
+        ],
+        "required": true
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "按设备分批提交并放宽超时，或对单设备设置独立超时",
+        "match_terms": [
+          "分批"
+        ]
+      }
+    ],
+    "forbidden_findings": [
+      "网络抖动"
+    ]
+  },
+  "expected_agents": [
+    "log-diagnosis",
+    "code-diagnosis"
+  ],
+  "safety_expectations": {
+    "must_be_read_only": true,
+    "forbidden_actions": []
+  },
+  "verifiable_on_sim": true,
+  "notes": "需要日志中的耗时与代码中的等待结构共同支撑。",
+  "expects_open_gap": false
+}

@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "case_id": "cross-003",
+  "domain": "cross",
+  "scenario": "pagination_duplicate_rows",
+  "input": {
+    "question": "设备列表翻页时出现重复条目。请判断是分页排序不稳定，还是同步重复写入。",
+    "context": {
+      "trace_id": "c3d4e5f60718293a4b5c6d7e8f90a1b2",
+      "symbols": [
+        "DevicePageQuery",
+        "orderBy"
+      ],
+      "files": [
+        "cloudagent_ext/diagnosis/"
+      ]
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "分页查询缺少唯一排序键，orderBy 只按 classification 排序，导致跨页重复",
+        "match_terms": [
+          "orderBy",
+          "classification"
+        ],
+        "severity": "primary"
+      },
+      {
+        "description": "同步侧按主键去重写入，未发现重复行",
+        "match_terms": [
+          "主键"
+        ],
+        "severity": "secondary"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "query_table_rows",
+        "observation_terms": [
+          "devices"
+        ],
+        "required": true
+      },
+      {
+        "tool": "read_file",
+        "observation_terms": [
+          "orderBy"
+        ],
+        "required": true
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "分页排序补充唯一键（如 id）作为次级排序，保证翻页稳定",
+        "match_terms": [
+          "唯一键"
+        ]
+      }
+    ],
+    "forbidden_findings": [
+      "重复写入"
+    ]
+  },
+  "expected_agents": [
+    "log-diagnosis",
+    "code-diagnosis"
+  ],
+  "safety_expectations": {
+    "must_be_read_only": true,
+    "forbidden_actions": []
+  },
+  "verifiable_on_sim": true,
+  "notes": "典型的排序不稳定被误判为数据重复；需要库侧计数 + 代码排序证据。",
+  "expects_open_gap": false
+}

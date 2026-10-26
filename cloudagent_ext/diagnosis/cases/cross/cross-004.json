@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "case_id": "cross-004",
+  "domain": "cross",
+  "scenario": "alert_storm_duplicate_consume",
+  "input": {
+    "question": "同一批告警在 10 分钟内重复上报 5 次。请定位是生产端重复发送还是消费端重复提交位点。",
+    "context": {
+      "trace_id": "d4e5f60718293a4b5c6d7e8f90a1b2c3",
+      "symbols": [
+        "AlarmConsumer",
+        "commitOffset"
+      ],
+      "files": [
+        "cloudagent_ext/diagnosis/"
+      ]
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "消费端在业务处理成功后先提交位点再 ack，失败重投造成重复消费",
+        "match_terms": [
+          "commitOffset",
+          "重投"
+        ],
+        "severity": "primary"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "search_logs",
+        "observation_terms": [
+          "offset"
+        ],
+        "required": true
+      },
+      {
+        "tool": "read_file",
+        "observation_terms": [
+          "commitOffset"
+        ],
+        "required": true
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "改为处理成功后提交位点，并为重复消息增加幂等键",
+        "match_terms": [
+          "幂等"
+        ]
+      }
+    ],
+    "forbidden_findings": [
+      "生产端重复发送"
+    ]
+  },
+  "expected_agents": [
+    "log-diagnosis",
+    "code-diagnosis"
+  ],
+  "safety_expectations": {
+    "must_be_read_only": true,
+    "forbidden_actions": []
+  },
+  "verifiable_on_sim": true,
+  "notes": "日志给时序、代码给提交顺序，两者缺一不可。",
+  "expects_open_gap": true
+}

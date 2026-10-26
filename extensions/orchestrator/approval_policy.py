@@ -1,0 +1,243 @@
+# ---------------------------------------------------------------------------
+# This file is part of CloudAgent.
+# Copyright (c) 2026 CloudAgent Authors
+# Licensed under the MIT License. See the LICENSE file in the project root.
+# ---------------------------------------------------------------------------
+
+"""Tool call approval policy system.
+
+Port of INTEGRATION.md Section 5.2 — direct Python API for tool call
+interception and policy evaluation, replacing Symphony's Codex JSON-RPC.
+"""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+import logging
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+_MISSING = object()
+
+
+# ---------------------------------------------------------------------------
+# ToolCallEvent — the event object passed to policy.evaluate()
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class ToolCallEvent:
+    """Tool call event passed to the agent loop.
+
+    Attaches approval state so the policy can mutate it in-place
+    (no need to return a separate result object).
+    """
+
+    tool_name: str
+    params: dict[str, Any] = field(default_factory=dict)
+    tool_use_id: str | None = None
+    _approved: bool | None = None
+    _deny_reason: str | None = None
+
+    def allow(self, reason: str = "") -> None:
+        """Mark this tool call as approved and clear any denial state.
+
+        ``reason`` is accepted for compatibility with existing policy
+        implementations, but it must not be stored in ``_deny_reason``:
+        downstream audit consumers treat every non-empty denial reason as a
+        rejected tool call.
+        """
+        self._approved = True
+        self._deny_reason = None
+
+    def deny(self, reason: str) -> None:
+        """Mark this tool call as denied with a reason."""
+        self._approved = False
+        self._deny_reason = reason
+
+    @property
+    def is_approved(self) -> bool | None:
+        """True if allowed, False if denied, None if not yet evaluated."""
+        return self._approved
+
+    @property
+    def denial_reason(self) -> str | None:
+        """Return the rejection reason, or None when the call is not denied."""
+        return self._deny_reason
+
+
+@dataclass(frozen=True)
+class ApprovalDecision:
+    """Read-only approval state shared with orchestrator consumers."""
+
+    is_approved: bool | None
+    denial_reason: str | None
+
+
+def read_approval_decision(event: Any) -> ApprovalDecision:
+    """Read an approval decision through the public event contract."""
+    approved = getattr(event, "is_approved", _MISSING)
+    if approved is not _MISSING and callable(approved):
+        approved = approved()
+    if approved is _MISSING:
+        approved = getattr(event, "_approved", None)
+
+    denial_reason = getattr(event, "denial_reason", _MISSING)
+    if denial_reason is not _MISSING and callable(denial_reason):
+        denial_reason = denial_reason()
+    if denial_reason is _MISSING:
+        denial_reason = getattr(event, "_deny_reason", None)
+
+    return ApprovalDecision(
+        is_approved=approved,
+        denial_reason=denial_reason,
+    )
+
+
+def apply_approval_decision(event: Any, decision: ApprovalDecision) -> None:
+    """Apply a decision via public methods, with a legacy-field fallback."""
+    if decision.is_approved is True:
+        allow = getattr(event, "allow", None)
+        if callable(allow):
+            allow()
+            return
+    elif decision.is_approved is False:
+        deny = getattr(event, "deny", None)
+        if callable(deny):
+            deny(decision.denial_reason or "")
+            return
+
+    setattr(event, "_approved", decision.is_approved)
+    setattr(event, "_deny_reason", decision.denial_reason)
+
+
+# ---------------------------------------------------------------------------
+# ApprovalPolicy interface
+# ---------------------------------------------------------------------------
+
+
+class ApprovalPolicy(ABC):
+    """Abstract base for tool call approval policies."""
+
+    @abstractmethod
+    def evaluate(
+        self,
+        event: ToolCallEvent,
+        session_context: dict[str, Any],
+    ) -> bool:
+        """Return True to approve the tool call, False to deny.
+
+        Implementations should call event.allow() or event.deny() to
+        record the decision on the event object itself.
+        """
+        raise NotImplementedError
+
+
+# ---------------------------------------------------------------------------
+# Built-in policies
+# ---------------------------------------------------------------------------
+
+
+class NeverApprovalPolicy(ApprovalPolicy):
+    """Auto-approve all tool calls — mirrors Symphony's approval_policy: never."""
+
+    def evaluate(
+        self,
+        event: ToolCallEvent,
+        session_context: dict[str, Any],
+    ) -> bool:
+        event.allow("policy=never")
+        return True
+
+
+class AskApprovalPolicy(ApprovalPolicy):
+    """Deny all tool calls — user decision required.
+
+    In autonomous mode this is typically not used, but provided
+    for parity with Symphony's approval_policy: ask.
+    """
+
+    def evaluate(
+        self,
+        event: ToolCallEvent,
+        session_context: dict[str, Any],
+    ) -> bool:
+        event.deny(reason="policy=ask (not supported in autonomous mode)")
+        return False
+
+
+class ApproveSafeOnlyPolicy(ApprovalPolicy):
+    """Approve read-only tools (glob, grep, read, web_search, web_fetch).
+
+    All other tools require explicit approval.
+    """
+
+    _SAFE_TOOLS: frozenset[str] = frozenset(
+        {
+            "glob",
+            "grep",
+            "read",
+            "read_multiple_files",
+            "web_search",
+            "web_fetch",
+            "toolsearch",
+            "ask_user_question",
+        }
+    )
+
+    def evaluate(
+        self,
+        event: ToolCallEvent,
+        session_context: dict[str, Any],
+    ) -> bool:
+        if event.tool_name.lower() in self._SAFE_TOOLS:
+            event.allow("policy=approve-safe-only")
+            return True
+        event.deny(reason=f"policy=approve-safe-only ({event.tool_name} not in safe list)")
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Policy registry
+# ---------------------------------------------------------------------------
+
+
+_APPROVAL_POLICY_MAP: dict[str | int, type[ApprovalPolicy]] = {
+    "never": NeverApprovalPolicy,
+    "ask": AskApprovalPolicy,
+    "approve-safe-only": ApproveSafeOnlyPolicy,
+}
+
+
+def get_approval_policy(policy_name: str | dict[str, Any]) -> ApprovalPolicy:
+    """Resolve policy name (or inline dict) to an ApprovalPolicy instance."""
+    if isinstance(policy_name, dict):
+        # Parse legacy inline configuration instead of silently turning
+        # structured input into unrestricted auto-approval.
+        policy_name = str(
+            policy_name.get("approval_policy") or policy_name.get("name") or policy_name.get("policy") or "ask"
+        )
+
+    name = str(policy_name).strip().lower()
+    policy_cls = _APPROVAL_POLICY_MAP.get(name)
+    if policy_cls is None:
+        logger.warning("Unknown approval policy %r; falling back to fail-closed 'ask'", policy_name)
+        return AskApprovalPolicy()
+    return policy_cls()
+
+
+def build_approval_policy_map(
+    sandbox_config: Any,
+) -> dict[str | int, ApprovalPolicy]:
+    """Build a map from policy names to instantiated policies.
+
+    Mirrors INTEGRATION.md section 3.5 AgentRunner._approval_policy_map.
+    """
+    raw = getattr(sandbox_config, "approval_policy", "never") or "never"
+    if isinstance(raw, dict):
+        key = str(raw.get("approval_policy") or raw.get("name") or raw.get("policy") or "ask").strip().lower()
+    else:
+        key = raw
+    return {key: get_approval_policy(raw)}

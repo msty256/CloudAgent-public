@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "case_id": "code-005",
+  "domain": "code",
+  "scenario": "skill_allowed_tools_real_negative",
+  "input": {
+    "question": "code-analysis 与 log-analysis 两个 Skill 的 allowed_tools 是否使用了真实工具名？",
+    "context": {
+      "files": [
+        "cloudagent_ext/skills/bundled/code_analysis.py",
+        "cloudagent_ext/skills/bundled/log_analysis.py"
+      ],
+      "symbols": ["_ALLOWED_TOOLS"]
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "两个 SKILL 的 allowed_tools 均为真实工具名（Read/Grep/Bash(...)/find_symbol/find_references/search_logs 等），不含 read_file 等伪名",
+        "match_terms": ["allowed_tools", "真实工具名"],
+        "severity": "none"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "find_symbol",
+        "observation_terms": ["allowed_tools", "_ALLOWED_TOOLS"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "find_symbol", "input": {"name": "_ALLOWED_TOOLS", "kind": "constant"}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "无需改动（允许工具名已与运行时一致）",
+        "match_terms": ["无需改动"]
+      }
+    ],
+    "forbidden_findings": ["allowed_tools 使用 read_file/search_code 等伪名"]
+  },
+  "expected_agents": ["code-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "阴性对照；分析对象=本仓库；事实核实 2026-10-19"
+}

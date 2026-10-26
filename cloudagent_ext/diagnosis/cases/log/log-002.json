@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "case_id": "log-002",
+  "domain": "log",
+  "scenario": "trace_partial_missing_service",
+  "input": {
+    "question": "trace bbbbbbbbccccccccddddeeeeffff0000 的完整跨服务链路是什么？能否还原？",
+    "context": {
+      "log_root_note": "仿真日志（write_sim_logs 生成）",
+      "trace_id": "bbbbbbbbccccccccddddeeeeffff0000"
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "该 trace 只在 svc-a 出现，svc-b 无对应事件——无法完整还原跨服务链路，属证据缺口（可能未触达或采样丢失）",
+        "match_terms": ["svc-a", "无法"],
+        "severity": "primary"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "correlate_events",
+        "observation_terms": ["svc-a"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "correlate_events", "input": {"trace_id": "bbbbbbbbccccccccddddeeeeffff0000"}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "声明证据缺口：仅 svc-a 有该 trace，需补充下游打点或应用日志后再判断",
+        "match_terms": ["证据缺口", "svc-b"]
+      }
+    ],
+    "forbidden_findings": ["已完整还原跨服务链路"]
+  },
+  "expected_agents": ["log-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "输入=仿真日志；事实核实 2026-10-19（TRACE_PARTIAL 仅在 svc-a）"
+}

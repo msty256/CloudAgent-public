@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "case_id": "code-006",
+  "domain": "code",
+  "scenario": "augment_callchain_evidence",
+  "input": {
+    "question": "augment_agent_result 在哪些地方被调用？它的作用域是什么？",
+    "context": {
+      "symbols": ["augment_agent_result"],
+      "files": ["cloudagent_ext/tool_system/tools/agent.py"]
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "调用点在 tool_system/tools/agent.py（import 与调用两处），且函数内部按 agent_type 早退、仅对 sql-diagnosis 生效",
+        "match_terms": ["agent.py", "sql-diagnosis"],
+        "severity": "primary"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "find_references",
+        "observation_terms": ["agent.py"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "find_references", "input": {"name": "augment_agent_result"}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "（取证类）在协议增强扩展时以本调用链为改造点",
+        "match_terms": ["调用链"]
+      }
+    ],
+    "forbidden_findings": ["调用点分散在多个模块"]
+  },
+  "expected_agents": ["code-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "取证类；分析对象=本仓库；事实核实 2026-10-19"
+}

@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "case_id": "sync-003",
+  "domain": "sync",
+  "scenario": "consumed_but_not_persisted",
+  "input": {
+    "question": "order-12345 在消息队列里显示已消费，但下游库查不到这条订单。请判断问题出在消费、业务处理还是落库。",
+    "context": {
+      "log_root_note": "仿真日志（cloudagent_ext.diagnosis.sync.fixtures.sim_sync_logs.write_sim_sync_logs 生成）",
+      "trace_id": "e5f6a7b8c9d00112233445566778899a",
+      "time_from": "2026-10-22 09:04:00",
+      "time_to": "2026-10-22 09:06:00",
+      "business_key": "order-12345"
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "消费侧因 rebalance 重复投递同一消息，业务服务校验租户区域失败（tenant region mismatch expected=north actual=south），订单未落库",
+        "match_terms": ["region mismatch", "未落库"],
+        "severity": "primary"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "search_logs",
+        "observation_terms": ["region mismatch"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "search_logs", "input": {"query": "region mismatch"}}
+      },
+      {
+        "tool": "query_table_rows",
+        "observation_terms": ["orders"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "query_table_rows", "input": {"table": "orders", "where": {"order_no": "order-12345"}}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "核对 tenant-003 的区域配置（配置为上北区/实际南区），修正后重放该消息；同时检查消费端幂等键是否覆盖重复投递",
+        "match_terms": ["区域", "重放"]
+      }
+    ],
+    "forbidden_findings": ["消费失败", "消息丢失"]
+  },
+  "expected_agents": ["sql-diagnosis", "log-diagnosis", "code-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "日志同时包含重复投递（consumer attempt=2）与业务校验失败（bizsvc），用于排除「消费失败」这一常见误判。"
+}

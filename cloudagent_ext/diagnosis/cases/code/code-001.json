@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "case_id": "code-001",
+  "domain": "code",
+  "scenario": "investigation_session_unwired",
+  "input": {
+    "question": "InvestigationSession / SessionBudget 是否在主 Agent 的派发链路上生效？请给出证据。",
+    "context": {
+      "symbols": ["InvestigationSession", "SessionBudget"],
+      "files": ["cloudagent_ext/diagnosis/session.py"]
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "InvestigationSession 仅定义在 diagnosis/session.py，生产代码无任何外部调用点（零接线）——预算控制未在真实链路上生效",
+        "match_terms": ["InvestigationSession", "session.py"],
+        "severity": "primary"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "find_references",
+        "observation_terms": ["session.py", "无外部调用"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "find_references", "input": {"name": "InvestigationSession"}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "在集成变更中把会话接线到主 Agent 派发路径，并补真实链路预算生效测试",
+        "match_terms": ["接线", "预算"]
+      }
+    ],
+    "forbidden_findings": ["InvestigationSession 已在生产链路生效"]
+  },
+  "expected_agents": ["code-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "分析对象=本仓库；零调用事实核实于 2026-10-19（session.py 之外零引用，仅测试引用）"
+}

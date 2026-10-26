@@ -1,0 +1,11 @@
+{
+  "archive_name": "native-ts",
+  "package_name": "native_ts",
+  "module_count": 4,
+  "sample_files": [
+    "native-ts/color-diff/index.py",
+    "native-ts/file-index/index.py",
+    "native-ts/yoga-layout/enums.py",
+    "native-ts/yoga-layout/index.py"
+  ]
+}

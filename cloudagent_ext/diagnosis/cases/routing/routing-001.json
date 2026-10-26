@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "description": "主 Agent 路由评测题库：只判『该派谁』，不评价诊断质量。",
+  "cases": [
+    {
+      "case_id": "route-001",
+      "question": "订单查询接口报 500，日志里有一串异常栈，先帮我看看是哪一步炸的",
+      "expected_agents": ["log-diagnosis"],
+      "forbidden_agents": [],
+      "notes": "纯日志线索，期望派日志子代理；派 sql 属越界但不致命，故不设 forbidden"
+    },
+    {
+      "case_id": "route-002",
+      "question": "orders 上游 5 万行、下游 0 行，帮我确认一下是不是真的没落库",
+      "expected_agents": ["sql-diagnosis"],
+      "forbidden_agents": [],
+      "notes": "计数类问题，必须走只读 DB 工具"
+    },
+    {
+      "case_id": "route-003",
+      "question": "线索版本同步偶发死锁，怀疑是 DELETE 和 MERGE 并发顺序不一致",
+      "expected_agents": ["sql-diagnosis", "code-diagnosis"],
+      "forbidden_agents": [],
+      "notes": "既要看锁/表，也要看加锁顺序，两个域都需要"
+    },
+    {
+      "case_id": "route-004",
+      "question": "TenantScopeFilter 这个类里，租户范围是从哪来的？为什么子租户看不到设备",
+      "expected_agents": ["code-diagnosis"],
+      "forbidden_agents": [],
+      "notes": "代码定位问题，不该派 sql"
+    },
+    {
+      "case_id": "route-005",
+      "question": "10-22 号之后告警数据全停了，同步任务、消费、落库都可能有问题，帮我查清楚",
+      "expected_agents": ["log-diagnosis", "sql-diagnosis"],
+      "forbidden_agents": [],
+      "notes": "全链路问题，日志与数据库两侧都要取证"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "case_id": "sync-002",
+  "domain": "sync",
+  "scenario": "sync_task_timeout",
+  "input": {
+    "question": "tenant-003 的增量同步从今天 09:00 开始没有产出，下游没有新数据。是任务本身失败还是下游写失败？",
+    "context": {
+      "log_root_note": "仿真日志（cloudagent_ext.diagnosis.sync.fixtures.sim_sync_logs.write_sim_sync_logs 生成）",
+      "trace_id": "d1e2f3a4b5c60718293a4b5c6d7e8f90",
+      "time_from": "2026-10-22 08:59:00",
+      "time_to": "2026-10-22 09:02:00",
+      "tenant": "tenant-003"
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "同步网关在批窗口内超时（TimeoutException: batch window exceeded 60s），任务中止且 checkpoint 未推进，因此下游根本没有收到批次",
+        "match_terms": ["TimeoutException", "checkpoint"],
+        "severity": "primary"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "search_logs",
+        "observation_terms": ["TimeoutException"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "search_logs", "input": {"query": "TimeoutException"}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "调大批窗口或拆分批次，并把上游查询耗时（本次 39s）纳入监控；修复后从 checkpoint 重跑该批次",
+        "match_terms": ["批次", "重跑"]
+      }
+    ],
+    "forbidden_findings": ["下游写入失败"]
+  },
+  "expected_agents": ["sql-diagnosis", "log-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "日志由 sync/fixtures/sim_sync_logs.py 生成；关键证据是 abort + checkpoint NOT advanced，用于区分「任务失败」与「下游写失败」。"
+}

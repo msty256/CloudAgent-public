@@ -1,0 +1,21 @@
+{
+  "archive_name": "keybindings",
+  "package_name": "keybindings",
+  "module_count": 14,
+  "sample_files": [
+    "keybindings/KeybindingContext.py",
+    "keybindings/KeybindingProviderSetup.py",
+    "keybindings/defaultBindings.py",
+    "keybindings/loadUserBindings.py",
+    "keybindings/match.py",
+    "keybindings/parser.py",
+    "keybindings/reservedShortcuts.py",
+    "keybindings/resolver.py",
+    "keybindings/schema.py",
+    "keybindings/shortcutFormat.py",
+    "keybindings/template.py",
+    "keybindings/useKeybinding.py",
+    "keybindings/useShortcutDisplay.py",
+    "keybindings/validate.py"
+  ]
+}

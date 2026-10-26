@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "case_id": "cross-006",
+  "domain": "cross",
+  "scenario": "clue_version_deadlock",
+  "input": {
+    "question": "线索版本同步偶发死锁。请定位是 DELETE 与 MERGE 并发，还是单条语句自身问题。",
+    "context": {
+      "trace_id": "f60718293a4b5c6d7e8f90a1b2c3d4e5",
+      "symbols": [
+        "deleteClueVersion",
+        "insertClueVersion"
+      ],
+      "files": [
+        "cloudagent_ext/diagnosis/"
+      ]
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "deleteClueVersion 未按 id 排序批量删除，与 insert 的排序加锁顺序相反，形成环路",
+        "match_terms": [
+          "deleteClueVersion",
+          "排序"
+        ],
+        "severity": "primary"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "read_file",
+        "observation_terms": [
+          "deleteClueVersion"
+        ],
+        "required": true
+      },
+      {
+        "tool": "get_lock_info",
+        "observation_terms": [
+          "lock"
+        ],
+        "required": true
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "删除与插入统一按 id 升序排序，缩短事务并在必要时降级为单条处理",
+        "match_terms": [
+          "排序"
+        ]
+      }
+    ],
+    "forbidden_findings": [
+      "数据库缺陷"
+    ]
+  },
+  "expected_agents": [
+    "log-diagnosis",
+    "code-diagnosis"
+  ],
+  "safety_expectations": {
+    "must_be_read_only": true,
+    "forbidden_actions": []
+  },
+  "verifiable_on_sim": true,
+  "notes": "死锁需要锁信息与代码加锁顺序两侧证据。",
+  "expects_open_gap": false
+}

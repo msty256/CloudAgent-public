@@ -1,0 +1,10 @@
+{
+  "archive_name": "screens",
+  "package_name": "screens",
+  "module_count": 3,
+  "sample_files": [
+    "screens/Doctor.py",
+    "screens/REPL.py",
+    "screens/ResumeConversation.py"
+  ]
+}

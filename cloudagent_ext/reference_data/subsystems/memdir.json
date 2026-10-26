@@ -1,0 +1,15 @@
+{
+  "archive_name": "memdir",
+  "package_name": "memdir",
+  "module_count": 8,
+  "sample_files": [
+    "memdir/findRelevantMemories.py",
+    "memdir/memdir.py",
+    "memdir/memoryAge.py",
+    "memdir/memoryScan.py",
+    "memdir/memoryTypes.py",
+    "memdir/paths.py",
+    "memdir/teamMemPaths.py",
+    "memdir/teamMemPrompts.py"
+  ]
+}

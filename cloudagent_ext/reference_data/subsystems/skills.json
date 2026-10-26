@@ -1,0 +1,27 @@
+{
+  "archive_name": "skills",
+  "package_name": "skills",
+  "module_count": 20,
+  "sample_files": [
+    "skills/bundled/batch.py",
+    "skills/bundled/claudeApi.py",
+    "skills/bundled/claudeApiContent.py",
+    "skills/bundled/claudeInChrome.py",
+    "skills/bundled/debug.py",
+    "skills/bundled/index.py",
+    "skills/bundled/keybindings.py",
+    "skills/bundled/loop.py",
+    "skills/bundled/loremIpsum.py",
+    "skills/bundled/remember.py",
+    "skills/bundled/scheduleRemoteAgents.py",
+    "skills/bundled/simplify.py",
+    "skills/bundled/skillify.py",
+    "skills/bundled/stuck.py",
+    "skills/bundled/updateConfig.py",
+    "skills/bundled/verify.py",
+    "skills/bundled/verifyContent.py",
+    "skills/bundledSkills.py",
+    "skills/loadSkillsDir.py",
+    "skills/mcpSkillBuilders.py"
+  ]
+}

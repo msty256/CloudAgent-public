@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "case_id": "code-007",
+  "domain": "code",
+  "scenario": "async_path_skips_augmentation",
+  "input": {
+    "question": "诊断子代理的结果在回注主 Agent 前会经过协议校验后处理。这条后处理在异步派发（run_in_background / coordinator 模式）时是否仍然生效？请给出证据。",
+    "context": {
+      "symbols": ["is_async", "_AUGMENTERS"],
+      "files": ["cloudagent_ext/tool_system/tools/agent.py"]
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "协议校验后处理只挂在同步分支：is_async 为真时提前 return _launch_async_agent，走不到后面 else 分支里构建的 _AUGMENTERS，异步结果因此没有校验块",
+        "match_terms": ["is_async", "_AUGMENTERS"],
+        "severity": "primary"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "find_symbol",
+        "observation_terms": ["is_async"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "find_symbol", "input": {"name": "is_async"}}
+      },
+      {
+        "tool": "find_symbol",
+        "observation_terms": ["_AUGMENTERS"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "find_symbol", "input": {"name": "_AUGMENTERS"}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "在异步结果回注路径补同一套协议校验（需先定何时回注、如何与主 Agent 汇总合流）",
+        "match_terms": ["异步", "校验"]
+      }
+    ],
+    "forbidden_findings": ["异步已覆盖校验"]
+  },
+  "expected_agents": ["code-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "分析对象=本仓库。已知缺口，本案例只记录不修复（补后处理属编排层范围）。事实核实 2026-10-20：_AUGMENTERS 是 _agent_call 内 else（同步）分支里的局部 dict（agent.py:897，col_offset=16），if is_async 在 :866-876 提前返回；_run_sync_agent 定义在 :912，是另一个嵌套函数。"
+}

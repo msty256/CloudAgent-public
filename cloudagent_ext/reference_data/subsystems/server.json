@@ -1,0 +1,10 @@
+{
+  "archive_name": "server",
+  "package_name": "server",
+  "module_count": 3,
+  "sample_files": [
+    "server/createDirectConnectSession.py",
+    "server/directConnectManager.py",
+    "server/types.py"
+  ]
+}

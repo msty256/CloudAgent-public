@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "case_id": "sync-001",
+  "domain": "sync",
+  "scenario": "upstream_has_downstream_missing",
+  "input": {
+    "question": "客户反馈昨天下午开始的订单在报表里查不到。请判断数据有没有同步到下游库，并定位断点。",
+    "context": {
+      "db_note": "primary=cloudagent_sim（上游），secondary=cloudagent_sim_downstream（下游）",
+      "tables": ["public.orders", "public.customers", "public.devices", "public.tenants"],
+      "business_key": "order_id",
+      "hint": "先确认是否落库，再做上下游对照"
+    }
+  },
+  "ground_truth": {
+    "root_causes": [
+      {
+        "description": "orders 表上游 50000 行、下游 0 行：该表未落库；同时 tenants 下游 8 行而上游 0 行，说明下游写入通道未被完全阻断，不是整库不同步",
+        "match_terms": ["orders", "50000"],
+        "severity": "primary"
+      }
+    ],
+    "required_evidence": [
+      {
+        "tool": "query_table_rows",
+        "observation_terms": ["orders"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "query_table_rows", "input": {"table": "orders", "target": "secondary"}}
+      },
+      {
+        "tool": "query_table_rows",
+        "observation_terms": ["tenants"],
+        "required": true,
+        "check": {"kind": "tool_called", "tool": "query_table_rows", "input": {"table": "tenants", "target": "secondary"}}
+      }
+    ],
+    "acceptable_recommendations": [
+      {
+        "description": "检查 orders 的同步任务是否被触发（任务记录/调度日志），并确认消费侧有无该表的处理记录",
+        "match_terms": ["触发", "orders"]
+      }
+    ],
+    "forbidden_findings": ["下游整库不同步", "同步服务全部故障"]
+  },
+  "expected_agents": ["sql-diagnosis"],
+  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "verifiable_on_sim": true,
+  "notes": "上游 50000 / 下游 0 由 scripts/sql_db/seed.sql 与 --empty-data 提供；tenants 0/8 由 tests/fixtures/sql/sync_seed_{primary,secondary}.sql 提供。反向差异是排除「整库不同步」的关键证据。"
+}

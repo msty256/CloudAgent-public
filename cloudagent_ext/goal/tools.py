@@ -1,0 +1,399 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# ---------------------------------------------------------------------------
+# This file is part of CloudAgent.
+# Copyright (c) 2026 CloudAgent Authors
+# Licensed under the MIT License. See the LICENSE file in the project root.
+# ---------------------------------------------------------------------------
+
+"""Model-callable tools for upstream-compatible thread goals."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Iterable
+
+from cloudagent_ext.tool_system.build_tool import Tool, build_tool
+from cloudagent_ext.tool_system.context import ToolContext
+from cloudagent_ext.tool_system.protocol import ToolResult
+
+from cloudagent_ext.goal.gate import goal_enabled
+from cloudagent_ext.goal.model import GoalCompletionMode, ThreadGoal, ThreadGoalStatus
+from cloudagent_ext.goal.protocol import ThreadGoalDTO
+from cloudagent_ext.goal.service import GoalService, GoalServiceError
+
+logger = logging.getLogger(__name__)
+
+GET_GOAL_TOOL_NAME = "get_goal"
+CREATE_GOAL_TOOL_NAME = "create_goal"
+UPDATE_GOAL_TOOL_NAME = "update_goal"
+
+GOAL_MODEL_TOOL_NAMES = frozenset({GET_GOAL_TOOL_NAME, CREATE_GOAL_TOOL_NAME, UPDATE_GOAL_TOOL_NAME})
+
+
+def _join_description(*parts: str, separator: str = " ") -> str:
+    return separator.join(parts)
+
+
+GET_GOAL_DESCRIPTION = _join_description(
+    "Get the current",
+    "goal for this",
+    "thread, including status,",
+    "budgets, token and",
+    "elapsed-time usage, and",
+    "remaining token budget.",
+)
+
+CREATE_GOAL_DESCRIPTION = _join_description(
+    _join_description(
+        "Create a goal only",
+        "when explicitly requested by",
+        "the user or system/developer",
+        "instructions; do not infer",
+        "goals from ordinary tasks.",
+    ),
+    _join_description(
+        "Set token_budget only when",
+        "an explicit token budget",
+        "is requested. Fails if",
+        "an unfinished goal exists;",
+        f"use {UPDATE_GOAL_TOOL_NAME} only",
+        "for status.",
+    ),
+    separator="\n",
+)
+
+UPDATE_GOAL_DESCRIPTION = " ".join(
+    (
+        "Update the goal that already belongs to this thread.",
+        "Use this tool only for a genuinely achieved or genuinely blocked goal.",
+        "Complete means the objective is fully achieved and no required work remains.",
+        "Blocked requires the same obstacle for three consecutive goal turns and no",
+        "meaningful progress without user input or an external state change.",
+        "A resumed goal starts a new blocked audit.",
+        "Difficulty, uncertainty, incomplete work, or useful clarification alone do not qualify.",
+        "Do not complete a goal merely because its budget is nearly exhausted or work is stopping.",
+        "The agent cannot use this tool to pause, resume, budget-limit, or usage-limit a goal;",
+        "those transitions belong to the user or system.",
+        "For a budgeted goal completed successfully, report final token usage from the result.",
+    )
+)
+
+_OBJECTIVE_DESCRIPTION = (
+    "Required. The concrete objective to start pursuing. This starts a new "
+    "active goal when no goal exists or replaces the current goal when it is complete."
+)
+
+# Bandit B105 is a false positive: this is a public schema description.
+_TOKEN_BUDGET_DESCRIPTION = (  # nosec B105
+    "Positive token budget for the new goal. Omit unless explicitly requested."
+)
+
+_UPDATE_STATUS_DESCRIPTION = (
+    "Required. Set to `complete` only when the objective is achieved and no "
+    "required work remains. Set to `blocked` only after the same blocking "
+    "condition has recurred for at least three consecutive goal turns and the "
+    "agent is at an impasse. After a previously blocked goal is resumed, the "
+    "resumed run starts a fresh blocked audit."
+)
+
+_NO_ARGUMENTS_SCHEMA = {
+    "type": "object",
+    "properties": {},
+    "required": [],
+    "additionalProperties": False,
+}
+
+
+def make_goal_model_tools() -> list[Tool]:
+    """Build the three model-visible goal tools."""
+    return [_build_goal_reader(), _build_goal_creator(), _build_goal_updater()]
+
+
+def _build_goal_reader() -> Tool:
+    return build_tool(
+        name=GET_GOAL_TOOL_NAME,
+        input_schema=_NO_ARGUMENTS_SCHEMA,
+        call=_get_goal,
+        prompt=GET_GOAL_DESCRIPTION,
+        description=GET_GOAL_DESCRIPTION,
+        is_enabled=goal_enabled,
+        is_concurrency_safe=lambda _input: True,
+        is_read_only=lambda _input: True,
+        user_facing_name=lambda _input: GET_GOAL_TOOL_NAME,
+    )
+
+
+def _build_goal_creator() -> Tool:
+    schema = {
+        "type": "object",
+        "properties": {
+            "objective": {"type": "string", "description": _OBJECTIVE_DESCRIPTION},
+            "token_budget": {"type": "integer", "description": _TOKEN_BUDGET_DESCRIPTION},
+        },
+        "required": ["objective"],
+        "additionalProperties": False,
+    }
+    return build_tool(
+        name=CREATE_GOAL_TOOL_NAME,
+        input_schema=schema,
+        call=_create_goal,
+        prompt=CREATE_GOAL_DESCRIPTION,
+        description=CREATE_GOAL_DESCRIPTION,
+        is_enabled=goal_enabled,
+        user_facing_name=lambda _input: CREATE_GOAL_TOOL_NAME,
+    )
+
+
+def _build_goal_updater() -> Tool:
+    schema = {
+        "type": "object",
+        "properties": {
+            "status": {
+                "type": "string",
+                "enum": ["complete", "blocked"],
+                "description": _UPDATE_STATUS_DESCRIPTION,
+            }
+        },
+        "required": ["status"],
+        "additionalProperties": False,
+    }
+    return build_tool(
+        name=UPDATE_GOAL_TOOL_NAME,
+        input_schema=schema,
+        call=_update_goal,
+        prompt=UPDATE_GOAL_DESCRIPTION,
+        description=UPDATE_GOAL_DESCRIPTION,
+        is_enabled=goal_enabled,
+        user_facing_name=lambda _input: UPDATE_GOAL_TOOL_NAME,
+    )
+
+
+def filter_goal_model_tools_for_context(
+    tools: Iterable[Tool],
+    context: ToolContext | Any | None,
+) -> list[Tool]:
+    """Drop goal tools from model-visible lists when upstream would hide them."""
+    visible = goal_model_tools_visible(context)
+    if visible:
+        visible_tools = list(tools)
+        if _has_active_evaluator_goal(context):
+            return [tool for tool in visible_tools if tool.name != UPDATE_GOAL_TOOL_NAME]
+        return visible_tools
+    return [tool for tool in tools if tool.name not in GOAL_MODEL_TOOL_NAMES]
+
+
+def goal_model_tools_visible(context: ToolContext | Any | None) -> bool:
+    """Return whether goal tools should be exposed for this model context."""
+    if not goal_enabled():
+        return False
+    if context is None:
+        return False
+    if _is_review_subagent_context(context):
+        return False
+    return _thread_id_from_context(context) is not None
+
+
+def _has_active_evaluator_goal(context: ToolContext | Any | None) -> bool:
+    if context is None:
+        return False
+    thread_id = _thread_id_from_context(context)
+    if thread_id is None:
+        return False
+    service = getattr(context, "goal_service", None)
+    if service is None:
+        return False
+    try:
+        goal = service.get_goal(thread_id)
+    except Exception:
+        logger.exception("Goal lookup failed while filtering model tools")
+        return True
+    return bool(
+        goal is not None
+        and goal.status is ThreadGoalStatus.ACTIVE
+        and goal.completion_mode is GoalCompletionMode.EVALUATOR
+    )
+
+
+def _get_goal(tool_input: dict[str, Any], context: ToolContext) -> ToolResult:
+    del tool_input
+    try:
+        thread_id, service = _goal_context(context)
+        goal = service.get_goal(thread_id)
+        return ToolResult(
+            name=GET_GOAL_TOOL_NAME,
+            output=_goal_response(goal, include_completion_budget_report=False),
+        )
+    except Exception as exc:  # noqa: BLE001 - tool errors are model-facing data
+        return _tool_error(GET_GOAL_TOOL_NAME, exc)
+
+
+def _create_goal(tool_input: dict[str, Any], context: ToolContext) -> ToolResult:
+    try:
+        thread_id, service = _goal_context(context)
+        objective = _objective_from_input(tool_input)
+        token_budget = _parse_create_token_budget(tool_input)
+        goal = service.create_goal(
+            thread_id,
+            objective,
+            token_budget,
+        )
+        return ToolResult(
+            name=CREATE_GOAL_TOOL_NAME,
+            output=_goal_response(goal, include_completion_budget_report=False),
+        )
+    except Exception as exc:  # noqa: BLE001 - tool errors are model-facing data
+        return _tool_error(CREATE_GOAL_TOOL_NAME, exc)
+
+
+def _update_goal(tool_input: dict[str, Any], context: ToolContext) -> ToolResult:
+    try:
+        thread_id, service = _goal_context(context)
+        status = _parse_update_status(tool_input.get("status"))
+        current = service.get_goal(thread_id)
+        if (
+            current is not None
+            and current.status is ThreadGoalStatus.ACTIVE
+            and current.completion_mode is GoalCompletionMode.EVALUATOR
+        ):
+            raise GoalServiceError("this /goal is completed only by its independent evaluator")
+        goal = service.update_goal(thread_id, status)
+        if goal is None:
+            raise GoalServiceError("cannot update goal because this thread has no goal")
+        return ToolResult(
+            name=UPDATE_GOAL_TOOL_NAME,
+            output=_goal_response(
+                goal,
+                include_completion_budget_report=status is ThreadGoalStatus.COMPLETE,
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001 - tool errors are model-facing data
+        return _tool_error(UPDATE_GOAL_TOOL_NAME, exc)
+
+
+def _goal_response(
+    goal: ThreadGoal | None,
+    *,
+    include_completion_budget_report: bool,
+) -> dict[str, Any]:
+    response: dict[str, Any] = {
+        "goal": None,
+        "remainingTokens": None,
+        "completionBudgetReport": None,
+    }
+    if goal is None:
+        return response
+
+    response["goal"] = ThreadGoalDTO.from_model(goal).to_dict()
+    response["remainingTokens"] = _remaining_tokens(goal)
+    if include_completion_budget_report and goal.status is ThreadGoalStatus.COMPLETE:
+        response["completionBudgetReport"] = _completion_budget_report(goal)
+    return response
+
+
+def _remaining_tokens(goal: ThreadGoal) -> int | None:
+    if goal.token_budget is None:
+        return None
+    return max(0, goal.token_budget - goal.tokens_used)
+
+
+def _completion_budget_report(goal: ThreadGoal) -> str | None:
+    if goal.token_budget is None and goal.time_used_seconds <= 0:
+        return None
+    return (
+        "Goal achieved. Use the structured goal payload to report its "
+        "tokensUsed and tokenBudget values when present, plus a concise elapsed "
+        "time summary when timeUsedSeconds is positive."
+    )
+
+
+def _goal_context(context: ToolContext | Any) -> tuple[str, GoalService]:
+    thread_id = _thread_id_from_context(context)
+    if thread_id is None:
+        raise GoalServiceError("goal tools require a saved session")
+    service = getattr(context, "goal_service", None)
+    if service is None:
+        raise GoalServiceError("goal service is unavailable for this session")
+    return thread_id, service
+
+
+def _thread_id_from_context(context: ToolContext | Any) -> str | None:
+    return _context_text(context, "goal_thread_id") or _context_text(context, "session_id")
+
+
+def _is_review_subagent_context(context: ToolContext | Any) -> bool:
+    agent_type = (_context_text(context, "agent_type") or "").lower()
+    options = getattr(context, "options", None)
+    query_source = (_context_text(options, "query_source") or "").lower()
+    review_sources = {
+        "agent:builtin:review",
+        "agent:template:review",
+        "agent:builtin:code-reviewer",
+    }
+    return agent_type in {"review", "code-reviewer"} or query_source in review_sources
+
+
+def _context_text(context: Any, attribute: str) -> str | None:
+    value = getattr(context, attribute, None)
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _objective_from_input(tool_input: dict[str, Any]) -> str:
+    value = tool_input.get("objective")
+    if not isinstance(value, str):
+        raise GoalServiceError("goal objective is required")
+    objective = value.strip()
+    if not objective:
+        raise GoalServiceError("goal objective cannot be empty")
+    return objective
+
+
+def _parse_create_token_budget(tool_input: dict[str, Any]) -> int | None:
+    raw_budget = tool_input.get("token_budget")
+    if raw_budget is None:
+        return None
+    token_budget = int(raw_budget)
+    if token_budget <= 0:
+        raise GoalServiceError("goal budgets must be positive when provided")
+    return token_budget
+
+
+def _parse_update_status(value: Any) -> ThreadGoalStatus:
+    try:
+        status = ThreadGoalStatus.from_wire(str(value))
+    except ValueError as exc:
+        raise GoalServiceError(f"invalid goal status: {value!r}") from exc
+
+    if status not in {ThreadGoalStatus.COMPLETE, ThreadGoalStatus.BLOCKED}:
+        raise GoalServiceError(
+            "update_goal accepts only complete or blocked; user and runtime controls own pause, resume, and limit states"
+        )
+    return status
+
+
+def _tool_error(name: str, exc: BaseException) -> ToolResult:
+    if isinstance(exc, (GoalServiceError, ValueError)):
+        message = str(exc)
+    else:
+        logger.error(
+            "Goal tool %s failed",
+            name,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+        message = "goal operation failed"
+    return ToolResult(name=name, output={"error": message}, is_error=True)
+
+
+__all__ = [
+    "CREATE_GOAL_TOOL_NAME",
+    "GET_GOAL_TOOL_NAME",
+    "GOAL_MODEL_TOOL_NAMES",
+    "UPDATE_GOAL_TOOL_NAME",
+    "filter_goal_model_tools_for_context",
+    "goal_model_tools_visible",
+    "make_goal_model_tools",
+]

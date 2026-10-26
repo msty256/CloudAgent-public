@@ -1,0 +1,11 @@
+{
+  "archive_name": "remote",
+  "package_name": "remote",
+  "module_count": 4,
+  "sample_files": [
+    "remote/RemoteSessionManager.py",
+    "remote/SessionsWebSocket.py",
+    "remote/remotePermissionBridge.py",
+    "remote/sdkMessageAdapter.py"
+  ]
+}
