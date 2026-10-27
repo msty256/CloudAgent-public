@@ -6,6 +6,7 @@
 
 用自然语言描述线上问题 · 自动派发只读子 Agent 取证 · 输出带证据与置信度的结论
 
+[![tests](https://github.com/msty256/CloudAgent-public/actions/workflows/test.yml/badge.svg)](https://github.com/msty256/CloudAgent-public/actions/workflows/test.yml)
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](#环境要求)
 [![License](https://img.shields.io/badge/License-MIT-2ea44f)](LICENSE)
 [![Status](https://img.shields.io/badge/status-alpha-orange)](#项目状态)
