@@ -29,6 +29,10 @@ from cloudagent_ext.diagnosis.code.tools import (
 )
 from cloudagent_ext.tool_system.context import ToolContext
 
+# 平台相关的绝对路径：Windows 与 POSIX 对"绝对"的定义不同，
+# 用 C:/... 在 POSIX 上只是个相对名字（会被拼到 root 下，报 path not found）。
+ABSOLUTE_PATH = "C:/Windows/win.ini" if os.name == "nt" else "/etc/passwd"
+
 _CORE_SOURCE = '''"""Core module."""
 
 import os
@@ -173,7 +177,7 @@ class TestFindReferences:
         assert "no_match" in result.output["note"]
 
     def test_absolute_path_rejected(self, code_root: Path) -> None:
-        result = find_references_tool.call({"name": "run", "path": "C:/Windows"}, _ctx())
+        result = find_references_tool.call({"name": "run", "path": ABSOLUTE_PATH}, _ctx())
         assert result.is_error is True
         # P2-2：绝对路径显式拒绝（即使位于 root 内也拒绝，语义与 schema 一致）
         assert "path_must_be_relative" in result.output["message"]

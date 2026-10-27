@@ -22,10 +22,16 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from cloudagent_ext.diagnosis.code import tools as code_tools
 from cloudagent_ext.diagnosis.log import tools as log_tools
+
+# 绝对路径要按平台取：POSIX 上 C:/... 只是相对名字，不会被判成绝对路径。
+ABSOLUTE_FILE = "C:/Windows/win.ini" if os.name == "nt" else "/etc/passwd"
+ABSOLUTE_DIR = "C:/Windows" if os.name == "nt" else "/etc"
 
 
 class TestLogRootEscape:
@@ -40,7 +46,7 @@ class TestLogRootEscape:
 
     def test_absolute_path_rejected(self, tmp_path) -> None:
         with pytest.raises(ValueError, match="path_must_be_relative"):
-            log_tools._validate_file("C:/Windows/win.ini", tmp_path)
+            log_tools._validate_file(ABSOLUTE_FILE, tmp_path)
 
     def test_empty_rejected(self, tmp_path) -> None:
         with pytest.raises(ValueError, match="file is required"):
@@ -86,7 +92,7 @@ class TestCodeRootEscape:
 
     def test_absolute_path_rejected(self, tmp_path) -> None:
         with pytest.raises(ValueError, match="path_must_be_relative"):
-            code_tools._validate_relative_path("C:/Windows", tmp_path)
+            code_tools._validate_relative_path(ABSOLUTE_DIR, tmp_path)
 
     def test_root_env_override(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setenv("CLOUDAGENT_CODE_ROOT", str(tmp_path))

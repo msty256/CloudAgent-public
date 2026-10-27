@@ -17,6 +17,17 @@ import sys
 from types import SimpleNamespace
 
 
+def _stub_provider(monkeypatch):
+    """让 REPL 路径不依赖本机 ~/.cloudagent 配置。
+
+    CI 上没有配置文件，启动时的 provider 校验（entrypoints/provider_validation.py）
+    会因为拿不到 API key 直接退出，而这几个用例只关心派发与环境变量，
+    给一个假 key 让它通过即可——不会真的发起请求。
+    """
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-used")
+
+
 def test_run_cli_version_short_circuit(monkeypatch):
     """--version short-circuits without loading TUI/REPL."""
     from cloudagent_ext.cli.dispatch import run_cli
@@ -64,6 +75,7 @@ def test_run_cli_with_args_config_skips_run_pre_action(monkeypatch):
 
 def test_run_cli_default_invocation_calls_downstream_repl(monkeypatch):
     """Default invocation reaches REPLFrontend and creates the downstream REPL."""
+    _stub_provider(monkeypatch)
     import cloudagent_ext.entrypoints.tui as tui_module
     from cloudagent_ext.cli.dispatch import run_cli
 
@@ -98,6 +110,7 @@ def test_run_cli_default_invocation_calls_downstream_repl(monkeypatch):
 
 def test_run_cli_permission_flags_resolved(monkeypatch):
     """With --dangerously-skip-permissions, RuntimeContext is built with bypass_available=True."""
+    _stub_provider(monkeypatch)
     # Ensure src.entrypoints.tui is imported before patching.
     import cloudagent_ext.entrypoints.tui as tui_ref
     from cloudagent_ext.cli.dispatch import run_cli
@@ -446,6 +459,7 @@ def test_build_parser_accepts_agent_debug_flag():
 
 
 def test_run_cli_agent_debug_sets_debug_environment(monkeypatch):
+    _stub_provider(monkeypatch)
     import cloudagent_ext.entrypoints.tui as tui_module
     from cloudagent_ext.cli.dispatch import run_cli
 
