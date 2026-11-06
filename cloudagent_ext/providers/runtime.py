@@ -46,6 +46,22 @@ from cloudagent_ext.providers.base import BaseProvider
 OAUTH_PROVIDERS = {"openai-codex"}
 
 
+def _workbuddy_has_local_session(provider_name: str) -> bool:
+    """Whether a WorkBuddy route can authenticate from this machine.
+
+    WorkBuddy issues no API keys: the credential is the sign-in the WorkBuddy
+    desktop app already wrote locally (see ``providers/workbuddy_provider.py``).
+    Kept beside the gate it relaxes so the two cannot drift.
+    """
+    try:
+        from cloudagent_ext.providers.workbuddy_provider import discover_workbuddy_credentials
+
+        region = "global" if provider_name.endswith("-global") else "cn"
+        return bool(discover_workbuddy_credentials(region))
+    except Exception:  # noqa: BLE001 - probing must never be fatal here
+        return False
+
+
 def build_provider_from_config(provider_name: str, model: str | None = None) -> BaseProvider:
     try:
         provider_cfg = get_provider_config(provider_name)
@@ -73,11 +89,22 @@ def build_provider_from_config(provider_name: str, model: str | None = None) -> 
 
         api_key = load_api_key(provider_name)
         if not api_key and provider_cfg:
-            raise RuntimeError(
-                f"API key for provider '{provider_name}' is not configured. "
-                "Run `cloudagent login` to set it up, or set the "
-                f"{provider_name.upper()}_API_KEY environment variable."
-            )
+            if provider_name.startswith("workbuddy"):
+                # `cloudagent login` cannot mint a WorkBuddy key — say what
+                # actually unblocks the user instead of pointing at it.
+                if not _workbuddy_has_local_session(provider_name):
+                    raise RuntimeError(
+                        f"WorkBuddy ({provider_name}) has no sign-in on this machine. "
+                        "Sign in with the WorkBuddy desktop app (or with the "
+                        "dsh-connect-workbuddy plugin) so a credential exists locally; "
+                        "WorkBuddy does not issue API keys."
+                    )
+            else:
+                raise RuntimeError(
+                    f"API key for provider '{provider_name}' is not configured. "
+                    "Run `cloudagent login` to set it up, or set the "
+                    f"{provider_name.upper()}_API_KEY environment variable."
+                )
     else:
         api_key = provider_cfg["api_key"]
 

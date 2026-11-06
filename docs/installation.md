@@ -162,6 +162,30 @@ cloudagent login
 
 环境变量优先级更高：`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `ZAI_API_KEY`。
 
+### 用本机 WorkBuddy 的模型（可选）
+
+WorkBuddy（国内版 `www.workbuddy.cn` / 国际版 `www.workbuddy.ai`）**不提供 API Key**，
+它只有一个本机登录态。CloudAgent 的 `workbuddy` / `workbuddy-global` 两个 provider
+直接借用这份登录态，所以**不需要 `cloudagent login`**：
+
+```bash
+cloudagent --provider workbuddy --model deepseek-v4.1-flash -p "你好"
+```
+
+凭据来源按优先级：`providers.workbuddy.api_key`（填原始 bearer token）→
+DSH 插件 `dsh-connect-workbuddy` 维护的 vault（`$DSH_HOME/workbuddy-vault/<region>/`，只读）
+→ WorkBuddy 桌面 App 自己的 auth 文件（只读）。access token 快过期时会在**内存里**刷新，
+不会回写 vault 或 App 的文件。
+
+模型目录来自上游 `/v3/config`，因此 `--model` 可填任意该账号可见的 id；倍率（`x0.79`）
+只用于展示，不参与路由。
+
+> **已知限制**：WorkBuddy 网关会按请求体内容做渠道校验，识别到其它厂商 Agent 的
+> 脚手架时回 `HTTP 400 / code 11128`。CloudAgent 的 system prompt 是 Claude Code 形状的，
+> 因此 provider 会先把已知的特征句改写成等价措辞（见
+> `cloudagent_ext/providers/workbuddy_provider.py` 的 `_FINGERPRINT_REWRITES`）。
+> 上游若新增指纹，把新句子加进那张表即可。这类非官方接入也有账号风险，请自行评估。
+
 ## 配置只读数据库
 
 诊断连库必须用**只读账号**。最小 SQL：

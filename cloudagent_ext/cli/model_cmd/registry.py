@@ -224,7 +224,15 @@ class ModelRegistry:
                         authenticated = False
                         auth_detail = str(exc)
                 else:
-                    authenticated = bool(cfg.get("api_key"))
+                    # WorkBuddy has no API key to look at: its credential is the
+                    # local desktop sign-in, so ask the same helper every other
+                    # "can this provider authenticate?" gate uses.
+                    if name.startswith("workbuddy"):
+                        from cloudagent_ext.providers import provider_has_credentials
+
+                        authenticated = provider_has_credentials(name, cfg.get("api_key") or "")
+                    else:
+                        authenticated = bool(cfg.get("api_key"))
             except Exception:
                 authenticated = False
 

@@ -50,6 +50,14 @@ def get_provider_validation_error(provider_name: str | None) -> str | None:
     # keeps this gate consistent with the agent-server's two gates.
     api_key = resolve_api_key(name, provider_cfg)
     if not provider_has_credentials(name, api_key):
+        if name.startswith("workbuddy"):
+            # `cloudagent login` cannot mint a WorkBuddy credential; pointing at
+            # it would send the user in a circle.
+            return (
+                f"error: no WorkBuddy sign-in found on this machine for provider '{name}'. "
+                "Sign in with the WorkBuddy desktop app (or the dsh-connect-workbuddy "
+                "plugin) first — WorkBuddy does not issue API keys."
+            )
         return (
             f"error: API key for provider '{name}' is not configured. "
             "Run `cloudagent login` to set it up."

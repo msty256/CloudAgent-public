@@ -160,6 +160,18 @@ def _CloudagentMinimaxProvider_lazy():
     return CloudagentMinimaxProvider
 
 
+def _WorkBuddyProvider_lazy():
+    from cloudagent_ext.providers.workbuddy_provider import WorkBuddyProvider
+
+    return WorkBuddyProvider
+
+
+def _WorkBuddyGlobalProvider_lazy():
+    from cloudagent_ext.providers.workbuddy_provider import WorkBuddyGlobalProvider
+
+    return WorkBuddyGlobalProvider
+
+
 def _AgnesImageProvider_lazy():
     from cloudagent_ext.providers.media.image.agnes import AgnesImageProvider
 
@@ -267,6 +279,45 @@ def _init_provider_extensions() -> None:
             ],
         },
         _KimiCodingProvider_lazy,  # type: ignore[arg-type]
+    )
+
+    # WorkBuddy — borrow the locally signed-in desktop session (CN / global).
+    # No API key exists for this gateway; ``api_key`` may hold a raw bearer token.
+    # The static lists below are only a fallback: the live catalog comes from
+    # ``/v3/config`` and carries each model's credit multiplier.
+    # Labels stay ASCII: provider listings are captured through cp936 pipes on
+    # Windows, and non-ASCII would break those readers.
+    register_provider(
+        "workbuddy",
+        {
+            "label": "WorkBuddy (CN)",
+            "default_base_url": "https://www.workbuddy.cn/v2",
+            "default_model": "deepseek-v4.1-flash",
+            "available_models": [
+                "deepseek-v4.1-flash",
+                "deepseek-v4-pro",
+                "glm-5.3",
+                "glm-5.2",
+                "kimi-k3.1-pro",
+                "hy3",
+            ],
+        },
+        _WorkBuddyProvider_lazy,  # type: ignore[arg-type]
+    )
+    register_provider(
+        "workbuddy-global",
+        {
+            "label": "WorkBuddy Global",
+            "default_base_url": "https://www.workbuddy.ai/v2",
+            "default_model": "deepseek-v4.1-flash",
+            "available_models": [
+                "deepseek-v4.1-flash",
+                "glm-5.3",
+                "kimi-k3",
+                "hy3",
+            ],
+        },
+        _WorkBuddyGlobalProvider_lazy,  # type: ignore[arg-type]
     )
 
     # Keep the historical native class route for direct callers without

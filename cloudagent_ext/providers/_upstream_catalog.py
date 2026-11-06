@@ -345,7 +345,14 @@ def provider_requires_api_key(provider_name: str) -> bool:
     """
     canonical = _canonical_provider_name(provider_name)
     spec = _SPECS_BY_ID.get(canonical)
-    return spec.requires_api_key if spec else True
+    if spec is not None:
+        return spec.requires_api_key
+    # WorkBuddy has no API keys at all — it authenticates with the desktop
+    # session the app already wrote locally. Signalling "needs a key" would send
+    # the user to `cloudagent login`, which cannot mint one.
+    if canonical in ("workbuddy", "workbuddy-global"):
+        return False
+    return True
 
 
 def provider_has_credentials(provider_name: str, api_key: str) -> bool:
@@ -360,9 +367,25 @@ def provider_has_credentials(provider_name: str, api_key: str) -> bool:
     gating on ``provider_requires_api_key`` alone bricked subscription
     sessions in the TUI.
     """
+    canonical = _canonical_provider_name(provider_name)
+    if canonical in ("workbuddy", "workbuddy-global"):
+        # WorkBuddy has no API keys: the provider authenticates with the session
+        # the WorkBuddy desktop app already wrote on this machine (see
+        # providers/workbuddy_provider.py). Answer from that local discovery
+        # *before* the "needs no key" short-circuit below, so a machine with no
+        # WorkBuddy sign-in is still reported as unauthenticated and the user
+        # gets one actionable message instead of a failure on the first turn.
+        if api_key:
+            return True
+        from cloudagent_ext.providers.workbuddy_provider import discover_workbuddy_credentials
+
+        region = "global" if canonical == "workbuddy-global" else "cn"
+        try:
+            return bool(discover_workbuddy_credentials(region))
+        except Exception:  # noqa: BLE001 - credential probing must never be fatal
+            return False
     if api_key or not provider_requires_api_key(provider_name):
         return True
-    canonical = _canonical_provider_name(provider_name)
     if canonical == "anthropic":
         from cloudagent_ext.auth.anthropic_subscription import load_credentials
 
