@@ -261,3 +261,8 @@ telemetry.toml
 
 # P3.3 仿真日志（本机演示用）
 /logs-sim/
+
+# 求职/面试准备材料（简历口径、面经、关键词表）——本仓是公开仓库，一律不入库。
+# 这类材料默认放 Desktop\leetcode，见 docs/resume-bullets.md 的用途说明。
+/cndg-prep/
+/docs/resume-bullets.md
