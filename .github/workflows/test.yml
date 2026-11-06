@@ -31,7 +31,11 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[db,dev]"
+          # 装 `kb` extra：稠密检索（faiss）是**可选运行时依赖**，不装也能跑，
+          # 但装上了 tests/diagnosis/knowledge/test_vector.py 的稠密层才有真实覆盖，
+          # 否则那 13 个用例会走 skip 分支——CI 就测不到这条路径了。
+          # onnxruntime / tokenizers 只影响真实模型推理，测试用假 embedder，不必带。
+          pip install -e ".[db,dev]" faiss-cpu
           # 单测超时：卡死时立刻失败并打印栈，而不是吃满 job 超时
           pip install pytest-timeout
 

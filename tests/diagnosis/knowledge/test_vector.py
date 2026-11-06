@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+
 import pytest
 
 from cloudagent_ext.diagnosis.knowledge import embedder as embedder_mod
@@ -27,6 +29,14 @@ from cloudagent_ext.diagnosis.knowledge.embedder import (
 )
 from cloudagent_ext.diagnosis.knowledge.store import Chunk, KnowledgeIndex
 from cloudagent_ext.diagnosis.knowledge.vector_store import FaissVectorStore, VectorIndexError
+
+#: ``faiss`` 属于可选依赖（``pip install -e ".[kb]"``），最小安装下没有它。
+#: 稠密层测试必须跟着它一起跳过——否则 CI 上"装了什么"会变成隐式前置条件，
+#: 而下面的降级路径测试（无需 faiss）必须照常跑，不能被整体 skip 掉。
+requires_faiss = pytest.mark.skipif(
+    importlib.util.find_spec("faiss") is None,
+    reason='dense retrieval needs `faiss-cpu` (pip install -e ".[kb]")',
+)
 
 
 class FakeEmbedder:
@@ -102,6 +112,7 @@ def test_model_dir_env_override(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@requires_faiss
 def test_faiss_store_search_orders_by_similarity():
     store = FaissVectorStore(dim=4)
     store.add(["a", "b"], [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]])
@@ -110,18 +121,21 @@ def test_faiss_store_search_orders_by_similarity():
     assert hits[0][0] == pytest.approx(1.0, abs=1e-5)
 
 
+@requires_faiss
 def test_faiss_store_rejects_dim_mismatch():
     store = FaissVectorStore(dim=4)
     with pytest.raises(VectorIndexError, match="expected"):
         store.add(["a"], [[1.0, 0.0]])
 
 
+@requires_faiss
 def test_faiss_store_rejects_length_mismatch():
     store = FaissVectorStore(dim=4)
     with pytest.raises(VectorIndexError, match="length mismatch"):
         store.add(["a", "b"], [[1.0, 0.0, 0.0, 0.0]])
 
 
+@requires_faiss
 def test_faiss_store_save_load_roundtrip(tmp_path):
     store = FaissVectorStore(dim=4)
     store.add(["a", "b"], [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]])
@@ -134,6 +148,7 @@ def test_faiss_store_save_load_roundtrip(tmp_path):
     assert loaded.search([0.0, 1.0, 0.0, 0.0], top_k=1)[0][1] == "b"
 
 
+@requires_faiss
 def test_faiss_store_rejects_version_mismatch(tmp_path):
     import json
 
@@ -149,6 +164,7 @@ def test_faiss_store_rejects_version_mismatch(tmp_path):
         FaissVectorStore.load(index_path, ids_path)
 
 
+@requires_faiss
 def test_faiss_store_rejects_ids_size_mismatch(tmp_path):
     import json
 
@@ -169,6 +185,7 @@ def test_faiss_store_rejects_ids_size_mismatch(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@requires_faiss
 def test_index_uses_dense_backend_when_available(chunks):
     fake = FakeEmbedder()
     index = KnowledgeIndex(chunks, dense=FaissVectorStore(dim=fake.dim), embedder=fake)
@@ -184,6 +201,7 @@ def test_index_falls_back_to_sparse_without_embedder(chunks):
     assert index.search_vector("索引", top_k=2)
 
 
+@requires_faiss
 def test_dense_failure_falls_back_to_sparse(chunks):
     class BrokenEmbedder(FakeEmbedder):
         def embed(self, texts):
@@ -195,6 +213,7 @@ def test_dense_failure_falls_back_to_sparse(chunks):
     assert index.search_vector("索引", top_k=2)
 
 
+@requires_faiss
 def test_hybrid_combines_bm25_and_dense(chunks):
     fake = FakeEmbedder()
     index = KnowledgeIndex(chunks, dense=FaissVectorStore(dim=fake.dim), embedder=fake)
@@ -203,6 +222,7 @@ def test_hybrid_combines_bm25_and_dense(chunks):
     assert index.chunks[fused[0][1]].chunk_id == "kb:a#0"
 
 
+@requires_faiss
 def test_null_embedder_means_sparse_backend(chunks):
     """回归：NullEmbedder(dim=0) 必须被视为"无稠密能力"，不能报告 dense。"""
 
@@ -211,6 +231,7 @@ def test_null_embedder_means_sparse_backend(chunks):
     assert index.search_vector("索引", top_k=2)
 
 
+@requires_faiss
 def test_degraded_index_still_retrieves(chunks, tmp_path):
     fake = FakeEmbedder()
     index = KnowledgeIndex(chunks, dense=FaissVectorStore(dim=fake.dim), embedder=fake)
@@ -221,6 +242,7 @@ def test_degraded_index_still_retrieves(chunks, tmp_path):
     assert degraded.search_vector("上游", top_k=1)
 
 
+@requires_faiss
 def test_save_load_keeps_dense_index(chunks, tmp_path):
     fake = FakeEmbedder()
     index = KnowledgeIndex(chunks, dense=FaissVectorStore(dim=fake.dim), embedder=fake)
@@ -234,6 +256,7 @@ def test_save_load_keeps_dense_index(chunks, tmp_path):
     assert loaded.chunks[hits[0][1]].chunk_id == "kb:a#0"
 
 
+@requires_faiss
 def test_load_without_embedder_uses_sparse(chunks, tmp_path):
     fake = FakeEmbedder()
     index = KnowledgeIndex(chunks, dense=FaissVectorStore(dim=fake.dim), embedder=fake)
