@@ -90,6 +90,18 @@ P3 写着"本轮不做：需要真实 PostgreSQL"。**这两条在 2026-11-07 �
 | sql-013 | `get_lock_info` 实测 `waiting: []`（当前无锁等待） |
 | sql-014 | `get_table_stats(customers)` 实测 `n_live_tup=2000`、`region.n_distinct=4.0` |
 
+**`verified_against` 的写法要求（重要，别写成"跑通了"）**：必须写出**断言的依据**，
+不是"我跑了一下通过"。差别在于依据能被后人复核并判断何时失效。模板：
+
+```
+tests/fixtures/sql/seed.sql 定义 <表/列> 无索引；
+2026-11-07 实测 EXPLAIN 命中 "<plan 片段>"（依据是索引缺失，非命中行数）
+```
+
+反例（会被打回）：
+- `"实测通过"` / `"已核对"` —— 没有依据，别人无法复核；
+- `"近 1 天命中 1440 行"` —— 这是数值断言，会随时间漂移（见 §6.1），**不是**本题的依据。
+
 ### T1.3 更新锁死的分布数字（强制）
 
 `tests/diagnosis/test_case_meta.py`：
@@ -115,12 +127,84 @@ EXPECTED_TOTAL = 38（不变）
      （用正则扫 `CREATE INDEX` 行，断言这四个列名不出现）；
    - 含 `idx_customers_region` 的创建；
    - 含 `ANALYZE`（否则 `n_distinct` 断言不稳）；
-   - 不含明文密码 / DSN（正则 `postgresql://` 与 `PASSWORD`）。
+   - 不含明文密码 / DSN（正则 `postgresql://` 与 `PASSWORD`）；
+   - **时间列的生成式不得出现 `now()` / `current_date` / `current_timestamp`**
+     ——滚动时间会让同一份 seed 在不同日子产出不同分布，破坏可复现性（详见 §6.1）。
+
+   ⚠️ **两条实现细节（我已在 ZCode 初版 `seed.sql` 上踩到，别重复）**：
+
+   1. **必须先剥掉 SQL 行注释再扫**。`seed.sql` 的 D2 注释里**故意**写着
+      `` 由 `now() - (i % 43200) minutes` 改为固定基准 `` —— 那是在说明**改掉了什么**。
+      直接 `"now()" in text` 会在这里误报。正确做法：逐行 `line.split("--")[0]` 后再匹配。
+   2. **`CREATE INDEX` 检查要限定在同一语句内**。`seed.sql` 有一行注释写着
+      "不要在这里给 orders 的 tenant_id / created_at / customer_id / status 加任何索引"，
+      正则如果跨行或只看 `orders` 关键字会误报。按行扫、只认以 `CREATE INDEX` 开头的语句。
 2. 每道 `static` 的 sql 题，其 `verified_against` **必须提到 seed 文件路径**，否则红。
 3. 幂等性：文件里 `TRUNCATE` 的每一张表，都必须在本文件里有对应的 `CREATE TABLE IF NOT EXISTS`。
 
 > 为什么第 3 条重要：旧的 `sync_seed_primary.sql` 就是"假设别人会建表"，
 > 结果那个"别人"不存在。**这条守门就是防止同样的坑再踩一次。**
+
+### T1.5 我在真库上验收 `seed.sql` 的结论（2026-11-07，ZCode 初版）
+
+我用**独立临时库** `p1_seed_probe`（不碰 `cloudagent_sim`）跑了 ZCode 的初版 `seed.sql`，
+结果如下——**这条是给 ZCode 的确认，不是新的工作量**：
+
+| 验收项 | 结果 |
+|---|---|
+| 首跑 | ✅ 全绿（orders 50000 / customers 2000） |
+| **连跑第二次（幂等）** | ✅ exit 0，仅"已存在，跳过"提示；重放耗时 **0.58 秒** |
+| 分布：tenant_id 1..50 各 1000 | ✅ `count(distinct)=50` |
+| 分布：status 四值各 12500 | ✅ |
+| 分布：region 四值各 500 | ✅ |
+| 外键完整性（orders.customer_id → customers.id） | ✅ 0 空、0 越界、0 孤儿客户 |
+| 索引清单 | ✅ 仅 `customers_pkey` / `idx_customers_region` / `orders_pkey`（**orders 无二级索引**） |
+| 静态扫描：无 `now()` / 无 DSN / 有 ANALYZE / 无 orders 索引 | ✅ |
+| sql-001..009 的 `plan_contains` | ✅ 全部命中（含 `Seq Scan` / `Bitmap Index Scan on idx_customers_region` / `Filter: (lower(region)` / `Index Scan using orders_pkey` / `Hash Join` / `Sort Key: amount DESC` / `date(created_at)`） |
+| `TestGtReverification` 跑在这个 seed 库上 | ✅ **1 passed**（不是 skip） |
+
+**结论：seed.sql 可以定为验收基线**，ZCode 继续做 T1.2/T1.3 时不必再回头改它。
+
+#### 但有两个真缺陷要修（都在 `seed.sql` 里）
+
+> **2026-11-07 追记**：这两条我都已在 `p1_def2` 临时库上**实测复现**，
+> 且缺陷 1 比下面初稿描述的更严重（默认权限也被写进去了）。
+> **以 [`reviews/p1-round1.md`](../reviews/p1-round1.md) 的缺陷 1/2 为准**，
+> 下面保留原始判断过程供对照。
+
+**缺陷 1（必须修）：`GRANT SELECT ON ALL TABLES IN SCHEMA public` 授权过宽**
+
+`seed.sql:90` 用的是 `ALL TABLES IN SCHEMA public`。在同一台机器上，
+`sync_seed_primary.sql` 会建 `tenants` / `devices`——两者共存于 `cloudagent_sim` 时，
+本文件会**顺带把 sync 域的表也授权出去**，而本文件 docstring 又声称
+"分工边界：tenants / devices 归 sync_seed_primary.sql，两份 seed 不重叠"。
+**声明与行为不一致。**
+
+修法（二选一，推荐前者）：
+- `GRANT SELECT ON customers, orders TO cloudagent_ro;` —— 只授自己建的；
+- 或 `GRANT SELECT ON ALL TABLES` 并**删掉**"不重叠"那句声明，承认它是全局授权。
+
+站在"布局清晰、未来不吓人"的角度选**前者**：seed 只对自己建的东西负责。
+
+**缺陷 2（必须修）：`TRUNCATE` 在"表已存在且有依赖对象"时会失败**
+
+> **2026-11-07 更正**：我初稿判断"当前测试库没触发、这条属文档修补"——**判错了**。
+> 实测触发条件是"有第三方表 FK 引用 orders/customers"，不是索引；
+> 在 `p1_def2` 里 `CREATE TABLE audit_log(... REFERENCES orders(id))` 后重放 seed，
+> 立即报 `在一个外键约束中无法删除 (truncate) 一个表的关联`，exit code 3。
+> 详细复现与修法见 [`reviews/p1-round1.md`](../reviews/p1-round1.md) 缺陷 2。
+
+在临时库里第 3 次重放时我试了带外键依赖更复杂的场景，发现：
+如果有人在 `orders` 上加了视图/其它表的引用，`TRUNCATE orders, customers` 会报
+`cannot truncate a table referenced in a foreign key constraint`。
+当前测试库没触发（只有一条 FK），但**这条失败模式会在别的库上出现，且报错信息看不出是 seed 的问题**。
+
+修法：显式写 `TRUNCATE orders, customers RESTART IDENTITY CASCADE;`
+——不，**别加 `CASCADE`**（会静默清掉别人的表）。正确做法是**保留现状并在注释里写明
+"本 seed 假定 orders/customers 上除彼此之外没有其它 FK 依赖；有则需先手工处理"**，
+让失败信息与注释对得上。这一条属**文档修补**，不改 SQL。
+
+> 我把这两条列进任务卡的「完成定义」，ZCode 修完再进 T1.2。
 
 ## 4. 验收标准（逐条可执行）
 
@@ -162,6 +246,85 @@ python -m cloudagent_ext.diagnosis.case_audit
 
 | 风险 | 缓解 |
 |---|---|
-| seed 的 `created_at` 改固定基准后，sql-002 的"近 1 天"可能变成 0 行，计划退化成 `Result` 而不是 `Seq Scan` | **这是真实风险**。seed 里必须让固定基准落在"最近 1 天内仍有足够行"的位置，或者把 sql-002 的查询改成相对 seed 基准的相对写法。**实现时必须在真库上跑 EXPLAIN 确认**，不能只看 SQL 写得对 |
+| ~~seed 的 `created_at` 改固定基准后，sql-002 的"近 1 天"可能变成 0 行，计划退化成 `Result`~~ **← 该论断已于 2026-11-07 实测证伪，见下方更正** | — |
 | `TRUNCATE` 会清掉本机正在用的数据 | 只在 `cloudagent_sim` 上跑；**先在自己建的临时库验一遍幂等**（验收 ⑤） |
 | 有人把 DSN 复制进仓库 | 静态守门 1 的第四项就是查这个 |
+
+### 6.1 两次更正（都是我初稿的阶段性问题，实测推翻）
+
+初稿 §6 我写过一条风险，随后又在修订中写成"这是假守卫"。**两次都不准确**，实测结论如下。
+写在这里是为了让 ZCode 不要照着错论断做设计。
+
+#### 更正一：空表/零命中**不会**退化成 `Result`（原风险条目作废）
+
+```sql
+-- 真表，filter 命中 0 行
+EXPLAIN SELECT * FROM orders WHERE created_at > now() + interval '1 year';
+-- → Seq Scan on orders (cost=0.00..1911.00 rows=5 width=56)
+
+-- 完全空表（WITH NO DATA 建表 + ANALYZE）
+EXPLAIN SELECT * FROM t_empty WHERE created_at > now() - interval '1 day';
+-- → Seq Scan on t_empty (cost=0.00..0.00 rows=1 width=112)
+```
+
+PG 只对**能静态判定为空**的查询（`WHERE false` / `1=0`）才退化成 `Result`。
+所以"seed 跑久了两天，`plan_contains: Seq Scan on orders` 会红"这个担心是**不成立的**。
+
+#### 更正二：老化 24 天后断言**依然成立**，不是假守卫
+
+我在修订稿里推演过"seed 跑完 30 天后近 1 天命中 0 行 → 断言恒真但不再证明原命题"。
+**这个推理是对的，但结论说重了**。实测本机现状（seed 建于 2026-10-14，今天 2026-11-07，
+已老化 **24 天**，`created_at` 最大值就是 24 天前）：
+
+```
+now() 与 max(created_at) 相差 24 天
+近 1 天命中：0 行     近 7 天命中：0 行
+
+EXPLAIN ... WHERE status = 'paid';
+→ Seq Scan on orders (rows=12428)          ← sql-008 断言成立、且是真实选择性 25%
+
+EXPLAIN ... WHERE status='paid' AND date(created_at) > current_date - 7 ...;
+→ Limit → Sort (Sort Key: o.amount DESC) → Hash Join
+    → Seq Scan on orders o  Filter: ((status='paid') AND (date(created_at) > (CURRENT_DATE - 7)))
+                                             ← sql-009 的三个断言全部成立
+```
+
+**关键在于：这些断言验证的是"列上没有索引 ⇒ 优化器不会选索引"，不是"命中了多少行"。**
+只要索引不存在，无论命中 0 行还是 12500 行，计划都是 `Seq Scan`；`Hash Join` 依赖的是
+`customer_id` 无索引，也与时间窗口无关。所以断言**是稳健的机制断言**，不是数值断言。
+
+→ **对 T1.1 的要求因此收敛为两条**（比我上一版轻）：
+
+1. seed **仍然**改用固定基准时间，不用 `now()`——理由不是"断言会红"，而是**可复现**：
+   同一份 seed 在不同日子跑出来的 `created_at` 分布应当一致，否则任何依赖分布的分析
+   （比如"选择性 25%"）都会慢慢失真；
+2. `verified_against` 里写清断言的**依据是索引缺失**，而不是行数。这一条比上一版更重要：
+   它防止未来有人"看到命中 0 行就以为题目失效"而误改 gt。
+
+`sql-002` / `sql-009` 的查询**保持原样**（`now()` / `current_date` 是真实业务写法，
+改成固定日期反而失真）。
+
+### 6.2 第三处更正：第三方 FK 会让 `TRUNCATE` 失败（初稿判错）
+
+初稿缺陷 2 我写的是"当前测试库没触发（只有一条 FK）……这一条属**文档修补**，不改 SQL"。
+**这个判断是错的**：触发条件不是"表上有几个索引"，而是**有没有第三方表 FK 引用
+`orders` / `customers`**。实测（`p1_def2`）：
+
+```sql
+CREATE TABLE audit_log (id bigint, order_id bigint REFERENCES orders(id));
+-- 然后 psql -f tests/fixtures/sql/seed.sql 重放：
+--   错误: 在一个外键约束中无法删除 (truncate) 一个表的关联
+--   DETAIL: 表"audit_log" 引用"orders".
+--   exit code 3
+```
+
+这在真实 `cloudagent_sim` 上完全可能发生（sync 域的表就可能引用这些表），
+所以它是会让人**在部署时突然撞上、且报错指不出是 seed 的问题**的缺陷。
+
+→ **要求**：保留 `TRUNCATE orders, customers;`（**不加 `CASCADE`**，那会静默清空别人的表），
+但必须**在注释里写明前提**："本 seed 假定 orders/customers 上除彼此之外无其它 FK 依赖；
+若有，需先手工处理"。详细复现见 [`reviews/p1-round1.md`](../reviews/p1-round1.md) 缺陷 2。
+
+**教训（给我自己）**：初稿这两条我都是靠"读代码 + 推理"下的判断，
+而结论全靠**真跑一次**才得到——`now()` 那条推演多了两层、`TRUNCATE` 那条推演少了条件。
+规格编写者不实测，写出来的"风险"就是猜。
