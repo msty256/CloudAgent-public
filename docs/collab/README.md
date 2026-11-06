@@ -14,6 +14,31 @@
 
 状态词：`ready`（可开工）/ `in_progress` / `in_review` / `changes_requested` / `done` / `blocked`。
 
+## 派工方式（重要）
+
+**任务由人（项目所有者在 ZCode 对话里）转达，Lead 不直接给 ZCode 发消息。**
+所以本目录里的任务卡必须是**自包含**的：ZCode 只需要读三个文件就能开工——
+
+```
+AGENTS.md  →  docs/collab/README.md（本文件）  →  docs/collab/tasks/<id>.md
+                                                ↘ docs/collab/design/<id>.md
+```
+
+凡是"要口头补充才能开工"的内容都算任务卡缺陷，发现后由 Lead 补进任务卡。
+
+## 基准目录（必须先对齐）
+
+ZCode 之前工作在 **`D:\cloudAgent`**（私有旧仓，HEAD `e73e5f7`，仅 sql 域 14 题）。
+本协作的基准是**当前仓库**：
+
+```
+C:\Users\Administrator\Desktop\CloudAgent-public   （HEAD 见下，38 题案例库）
+```
+
+两者差异不是"版本新一点"，而是**案例库规模与已合入机制都不同**：
+`CloudAgent-public` 含 code/log/cross/sync 四域共 38 题，且阶段 3（上下文压缩）
+与阶段 4（证据失效传播）已合入。**在 `D:\cloudAgent` 上做的实现不能直接搬过来。**
+
 ## 为什么是这个顺序
 
 1. **P1 排第一**：它不烧模型额度，却把"可核题"从 17 提到 28 —— 所有后续 live 对照的分母。
