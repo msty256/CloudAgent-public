@@ -24,12 +24,18 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+# 评测 runner 作为命令行工具运行，默认不配 handler；这里给个模块级 logger，
+# 避免 `logger.debug(...)` 在异常分支真正触发时抛 NameError（ruff F821 曾报出）。
+logger = logging.getLogger(__name__)
+
 from cloudagent_ext.diagnosis.case_library import load_cases
+from cloudagent_ext.diagnosis.evaluation.cost import sum_usage_summaries
 from cloudagent_ext.diagnosis.evaluation.executors import (
     CaseRun,
     EvaluationExecutorError,
@@ -89,6 +95,8 @@ def _execute_cases(
 
         try:
             scored = score_case(case, case_run)
+            # score_case 的返回契约里没有这个键（它只管评分），在人读层补上。
+            scored.setdefault("main_answer", getattr(case_run, "main_answer", ""))
         except Exception as exc:  # noqa: BLE001 - 评分器异常单列，绝不静默
             scored = {
                 "case_id": case["case_id"],
@@ -109,6 +117,8 @@ def _execute_cases(
                 "source": case_run.source,
                 "meta": case_run.meta,
                 "raw_output": case_run.raw_output,
+                # P2：main 派发时主 Agent 的原始回答（评分用 raw_output，人读用这个）
+                "main_answer": getattr(case_run, "main_answer", ""),
                 "events": case_run.events,
                 "parse_error": None,
                 "error": case_run.error,
@@ -121,6 +131,57 @@ def _execute_cases(
         scored["conversation"] = build_conversation(case_run.calls, case_run.events)
         results.append(scored)
     return results
+
+
+#: 基线臂：**这次改造引入的机制全部关掉**，只保留原有的缺口注入。
+#:
+#: 注意 ``gaps-on`` 不等于 ``baseline``：前者是"什么都不改"即生产默认
+#: （新机制全开），后者是"新机制全关"。名字相近、语义相反，别混。
+_BASELINE_ENV: dict[str, str] = {
+    "CLOUDAGENT_GAP_INJECTION": "on",
+    "CLOUDAGENT_DOMAIN_GATE": "off",
+    "CLOUDAGENT_GOAL_STOP_STRATEGY": "agent_report",
+    "CLOUDAGENT_EVIDENCE_INVALIDATION": "off",
+    "CLOUDAGENT_CONTEXT_REDUCE": "off",
+}
+
+#: 臂 = 一组环境变量。`variant` 只是"预设组合"的语法糖。
+#:
+#: 除 ``arm:inval`` 外都是**严格单变量**（相对 baseline 只改一个开关）。
+#: ``arm:inval`` 必须同时开 ``hybrid``：失效传播要求"回退后再次 resolved 须过核查"，
+#: 而 ``agent_report`` 档下核查根本不跑——单开 invalidation 会得到一个"永远不收敛"的臂。
+_ARM_ENV_PRESETS: dict[str, dict[str, str]] = {
+    "gaps-on": {},  # 兼容旧名：不改任何开关（= 生产默认，新机制全开）
+    "gaps-off": {"CLOUDAGENT_GAP_INJECTION": "off"},
+    "baseline": dict(_BASELINE_ENV),
+    "arm:domain": {**_BASELINE_ENV, "CLOUDAGENT_DOMAIN_GATE": "same_target"},
+    "arm:state": {**_BASELINE_ENV, "CLOUDAGENT_GOAL_STOP_STRATEGY": "hybrid"},
+    "arm:inval": {
+        **_BASELINE_ENV,
+        "CLOUDAGENT_GOAL_STOP_STRATEGY": "hybrid",
+        "CLOUDAGENT_EVIDENCE_INVALIDATION": "on",
+    },
+    "arm:reduce": {**_BASELINE_ENV, "CLOUDAGENT_CONTEXT_REDUCE": "on"},
+    # 知识库（RAG）两臂对照：--variant kb-on / kb-off
+    # 子 Agent 定义不变，只在装配阶段决定是否把 search_knowledge 放进工具表，
+    # 所以这是**严格单变量**：唯一差异就是"能不能查历史档案"。
+    "kb-on": {**_BASELINE_ENV, "CLOUDAGENT_KB_ENABLED": "on"},
+    "kb-off": {**_BASELINE_ENV, "CLOUDAGENT_KB_ENABLED": "off"},
+}
+
+
+def _gap_injection_effective(mode: str, dispatch_mode: str, variant: str) -> bool:
+    """本次运行是否真的走在"缺口注入生效"的链路上。
+
+    三个条件缺一不可：
+
+    * ``mode == "live"``——offline 回放根本不跑模型，谈不上注入生效；
+    * ``dispatch_mode == "main"``——``direct`` 装配时 ``load_agent_tools=False``，
+      registry 里没有 Agent 工具，``_agent_call``（注入点）不会被调用；
+    * ``variant == "gaps-on"``——注入了才叫生效。
+    """
+
+    return bool(mode == "live" and dispatch_mode == "main" and variant == "gaps-on")
 
 
 def _round_totals(results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -159,6 +220,18 @@ def _round_totals(results: list[dict[str, Any]]) -> dict[str, Any]:
             for r in results
             if int((r.get("meta") or {}).get("injected_dispatches", 0) or 0) > 0
         ),
+        # T0.2：token / cache（逐 case 的 meta.usage 求和；不可得时 available=False）
+        "usage": sum_usage_summaries(
+            [
+                (r.get("meta") or {}).get("usage") or {}
+                for r in results
+            ]
+        ),
+        "cases_without_usage": sum(
+            1
+            for r in results
+            if not ((r.get("meta") or {}).get("usage") or {}).get("available")
+        ),
     }
     tool_calls.sort()
     totals["tool_calls_median"] = tool_calls[len(tool_calls) // 2] if tool_calls else 0
@@ -167,9 +240,46 @@ def _round_totals(results: list[dict[str, Any]]) -> dict[str, Any]:
 
 _METRIC_KEYS = ("tool_calls_total", "model_calls_total", "elapsed_total", "sub_tool_calls")
 
+# T0.5：这些键以前直接取 ``per_round[0]``，于是 ``--repeat 2`` 时第 2 轮对它们毫无影响
+# （等于白跑一半）。现在统一给出 median / min / max 三个标量 + 每轮原始序列。
+# 字段名保持原样（下游 ``int(experiment.get(...))`` 的读法不会断），但**语义变了**：
+# 从"第一轮的值"变成"跨轮中位数"。读报告时要注意这一点。
+_SCALAR_KEYS = (
+    "tool_calls_median",
+    "delegations",
+    "gaps_total",
+    "gaps_resolved",
+    "injected_dispatches",
+    "cases_with_injection",
+    "main_tool_calls",
+    "sub_tool_calls",
+)
+
+
+def _median_of(values: list[float]) -> float | int:
+    """中位数（偶数个取中间两个的均值）；全为整数且中位数是整数时返回 int。"""
+
+    if not values:
+        return 0
+    ordered = sorted(values)
+    n = len(ordered)
+    result = (
+        ordered[n // 2]
+        if n % 2
+        else (ordered[n // 2 - 1] + ordered[n // 2]) / 2
+    )
+    if float(result).is_integer():
+        return int(result)
+    return result
+
 
 def _experiment_stats(rounds: list[list[dict[str, Any]]]) -> dict[str, Any]:
-    """跨轮聚合：主指标给 median / min / max（`--repeat` 才真正生效）。"""
+    """跨轮聚合。
+
+    * ``_METRIC_KEYS``：``{key: {median,min,max}}`` + ``series``（原有形状，未改）
+    * ``_SCALAR_KEYS``：``key`` = 跨轮中位数，另有 ``key_min`` / ``key_max`` / ``key_series``
+    * token / cache：``usage_*`` 同上（``usage_available=False`` 表示本批根本没采到 usage）
+    """
 
     per_round = [_round_totals(items) for items in rounds if items]
     if not per_round:
@@ -177,14 +287,6 @@ def _experiment_stats(rounds: list[list[dict[str, Any]]]) -> dict[str, Any]:
     stats: dict[str, Any] = {
         "cases": per_round[0]["cases"],
         "rounds": len(per_round),
-        "tool_calls_median": per_round[0]["tool_calls_median"],
-        "delegations": per_round[0]["delegations"],
-        "gaps_total": per_round[0]["gaps_total"],
-        "gaps_resolved": per_round[0]["gaps_resolved"],
-        "injected_dispatches": per_round[0]["injected_dispatches"],
-        "cases_with_injection": per_round[0]["cases_with_injection"],
-        "main_tool_calls": per_round[0]["main_tool_calls"],
-        "sub_tool_calls": per_round[0]["sub_tool_calls"],
     }
     stats["series"] = {
         key: [float(item[key]) for item in per_round] for key in _METRIC_KEYS
@@ -198,6 +300,25 @@ def _experiment_stats(rounds: list[list[dict[str, Any]]]) -> dict[str, Any]:
             "min": values[0],
             "max": values[-1],
         }
+
+    for key in _SCALAR_KEYS:
+        values = [float(item.get(key, 0) or 0) for item in per_round]
+        stats[key] = _median_of(values)
+        stats[f"{key}_min"] = min(values)
+        stats[f"{key}_max"] = max(values)
+        stats[f"{key}_series"] = values
+
+    # token / cache：跨轮取中位数；不可得时 available=False（报告应写"不可得"而非 0）
+    usage_rounds = [item.get("usage") or {} for item in per_round]
+    for field in ("input_tokens", "output_tokens", "cached_input_tokens", "total_tokens"):
+        values = [float(item.get(field, 0) or 0) for item in usage_rounds]
+        stats[f"usage_{field}"] = _median_of(values)
+        stats[f"usage_{field}_series"] = values
+    stats["usage_available"] = any(bool(item.get("available")) for item in usage_rounds)
+    stats["cache_field"] = next(
+        (str(item.get("cache_field")) for item in usage_rounds if item.get("cache_field")),
+        "",
+    )
     return stats
 
 
@@ -222,6 +343,28 @@ def _metric_snapshot(metrics: dict[str, Any]) -> dict[str, float]:
     return snapshot
 
 
+def _bootstrap_config_environment() -> None:
+    """把 ``config.json`` 的 ``env`` 段注入进程环境（幂等）。
+
+    评测 runner 是**直接调 API** 的，跳过了 CLI 的启动初始化——
+    而 ``CLOUDAGENT_LOG_ROOT`` / ``CLOUDAGENT_DB_DSN`` 这些恰恰配在
+    config.json 的 ``env`` 段里，正式应用由 ``permissions.trust_boundary`` 负责。
+
+    不注入的后果：log 域 ``search_logs`` 首次调用就返回 ``log_root_not_configured``，
+    整个域"无法诊断"——而**报错信息看起来像环境没准备好，不像代码漏了一步**。
+    2026-11-04 实测 log-002/003 全因此失败。
+    """
+
+    try:
+        from cloudagent_ext.permissions.trust_boundary import (
+            apply_safe_config_environment_variables,
+        )
+
+        apply_safe_config_environment_variables()
+    except Exception:  # noqa: BLE001 — 环境注入失败不该让评测起不来
+        logger.debug("config environment bootstrap failed", exc_info=True)
+
+
 def run_evaluation(
     *,
     mode: str,
@@ -236,6 +379,7 @@ def run_evaluation(
     variant: str = "gaps-on",
     repeat: int = 1,
     dispatch_mode: str = "direct",
+    grade_source: str = "auto",
 ) -> dict[str, Any]:
     """执行一次完整评测；返回汇总 dict（同时已落盘报告）。"""
 
@@ -243,14 +387,18 @@ def run_evaluation(
 
     variant = str(variant or "gaps-on")
     repeat = max(int(repeat or 1), 1)
-    if variant not in ("gaps-on", "gaps-off"):
-        raise EvaluationError(f"未知 variant：{variant!r}（支持 gaps-on / gaps-off）")
-    # 强制关闭注入并校验，避免"名义分组、实际同臂"；结束后还原，避免污染进程
+    if variant not in _ARM_ENV_PRESETS:
+        raise EvaluationError(
+            f"未知 variant：{variant!r}（支持 {', '.join(sorted(_ARM_ENV_PRESETS))}）"
+        )
+    _bootstrap_config_environment()
+
+    # 按臂设置开关，结束后**逐个还原**，避免污染进程（连续跑多臂时尤其重要）
     import os
 
-    _previous_injection_env = os.environ.get("CLOUDAGENT_GAP_INJECTION")
-    if variant == "gaps-off":
-        os.environ["CLOUDAGENT_GAP_INJECTION"] = "off"
+    _arm_preset = _ARM_ENV_PRESETS[variant]
+    _previous_env = {key: os.environ.get(key) for key in _arm_preset}
+    os.environ.update(_arm_preset)
 
     cases = load_cases(domain)
     if case_ids:
@@ -275,6 +423,7 @@ def run_evaluation(
                 provider_factory=provider_factory,
                 timeout_per_case=timeout_per_case,
                 dispatch_mode=dispatch_mode,
+                grade_source=grade_source,
             )
         else:
             raise EvaluationError(f"未知评测模式：{mode!r}（支持 offline / live）")
@@ -292,6 +441,8 @@ def run_evaluation(
         "parsed": sum(1 for r in counted if r["category"] == "parsed"),
         "invalid_output": sum(1 for r in counted if r["category"] == "invalid_output"),
         "crashed": sum(1 for r in counted if r["category"] == "crashed"),
+        # 阶段 5：撞轮数上限 / 输出被截断，单独计数——它们不是"答错"
+        "unfinished": sum(1 for r in counted if r["category"] == "unfinished"),
         "grader_error": grader_errors,
     }
 
@@ -338,8 +489,14 @@ def run_evaluation(
         "timeout_per_case": timeout_per_case,
         "domain": domain,
         "variant": variant,
+        # 本臂实际设置的开关（空 dict = 不改任何东西）。事后核对"声明关了是否真关"的依据。
+        "arm_env": dict(_arm_preset),
         "repeat": repeat,
         "dispatch_mode": dispatch_mode,
+        # P2：评分对象。auto 在 main 模式下 → subagent；实际生效值见每个 case 的 meta.grade_source。
+        "grade_source": grade_source,
+        # T0.6：让报告能自证"这次跑的到底是不是缺口编排生效的那条链路"。
+        "gap_injection_effective": _gap_injection_effective(mode, dispatch_mode, variant),
         "repeats": repeat_stats,
         "experiment": _experiment_stats(rounds_results),
     }
@@ -347,16 +504,36 @@ def run_evaluation(
     base_out = Path(out_dir) if out_dir else Path("eval") / "runs"
     paths = write_report(base_out / run_id, run_payload, results, domain=domain)
 
-    if variant == "gaps-off" and int(run_payload["experiment"].get("injected_dispatches", 0)) > 0:
+    if dispatch_mode == "direct" and variant == "gaps-on" and mode == "live":
+        # 不 raise：`direct` 仍是合法用法（只测子代理单独干活的能力）。
+        # 但结论不能用于缺口编排对照，所以要在控制台上说清楚。
+        print(
+            "[eval] ⚠ 派发模式为 direct：该模式不装配 Agent 工具，"
+            "缺口注入 / decide() / 域闸都不会生效。\n"
+            "        本次结果只反映子代理自身能力，不能用于缺口编排的对照结论；"
+            "如需对照请加 --dispatch main。",
+            file=sys.stderr,
+        )
+
+    # T0.5：`injected_dispatches` 现在是跨轮中位数；泄漏判定要看"任意一轮是否泄漏"，
+    # 所以用 _max——否则 2 轮里 1 轮泄漏、1 轮为 0 时中位数会把泄漏抹平。
+    leaked = int(
+        run_payload["experiment"].get(
+            "injected_dispatches_max",
+            run_payload["experiment"].get("injected_dispatches", 0),
+        )
+        or 0
+    )
+    if variant == "gaps-off" and leaked > 0:
         raise EvaluationError(
             "开关泄漏：gaps-off 臂出现 injected_dispatches > 0（env 未生效或被覆盖）"
         )
 
-    if variant == "gaps-off":
-        if _previous_injection_env is None:
-            os.environ.pop("CLOUDAGENT_GAP_INJECTION", None)
+    for _key, _old in _previous_env.items():
+        if _old is None:
+            os.environ.pop(_key, None)
         else:
-            os.environ["CLOUDAGENT_GAP_INJECTION"] = _previous_injection_env
+            os.environ[_key] = _old
 
     return {
         "run_id": run_id,
@@ -404,7 +581,19 @@ def _arm_summary(run: dict[str, Any]) -> dict[str, Any]:
         return f"{value:.0%}"
 
     def _stat(key: str, field: str) -> float:
-        return float((experiment.get(key) or {}).get(field, 0) or 0)
+        """读实验统计量，容忍两种历史形状。
+
+        ``experiment`` 里同名键存在两种写法：早期是 ``{"median": x, "min": …, "max": …}``
+        形态的 dict，后来部分指标直接存裸数字。这里统一兼容，否则对比会
+        在 ``'int' object has no attribute 'get'`` 上崩掉（2026-11-05 实测踩到）。
+        """
+
+        item = experiment.get(key)
+        if isinstance(item, dict):
+            return float(item.get(field, 0) or 0)
+        if isinstance(item, (int, float)):
+            return float(item)
+        return 0.0
 
     return {
         "variant": run.get("variant", "gaps-on"),
@@ -686,7 +875,7 @@ def _run_rates(run: dict[str, Any]) -> dict[str, str]:
     counts = run.get("counts") or {}
     failures = "／".join(
         f"{name} {counts.get(name, 0)}"
-        for name in ("parsed", "invalid_output", "crashed", "grader_error")
+        for name in ("parsed", "invalid_output", "unfinished", "crashed", "grader_error")
         if counts.get(name)
     )
     return {
@@ -794,7 +983,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-cases", type=int, default=None)
     parser.add_argument("--timeout-per-case", type=float, default=180.0)
     parser.add_argument("--retries", type=int, default=0)
-    parser.add_argument("--variant", default="gaps-on", choices=["gaps-on", "gaps-off"],
+    parser.add_argument("--variant", default="gaps-on", choices=sorted(_ARM_ENV_PRESETS),
                         help="对照实验分组：gaps-off 强制关闭缺口注入")
     parser.add_argument("--repeat", type=int, default=1, help="同臂重复轮数（run 内聚合）")
     parser.add_argument("--compare", nargs=2, default=None, metavar=("RUN_A", "RUN_B"),
@@ -805,6 +994,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="路由评测：只判派发对象（需 --mode live）")
     parser.add_argument("--dispatch", default="direct", choices=["direct", "main"],
                         help="live 执行器的派发模式：direct=直驱子代理（默认）/ main=走主 Agent")
+    parser.add_argument("--grade-source", default="auto", choices=["auto", "main", "subagent"],
+                        help="评分对象：auto=main 模式下取子代理协议结果（默认）/ "
+                             "main=评主 Agent 回答（散文，通常无法解析）/ subagent=评子代理结果")
     parser.add_argument("--summary", action="store_true",
                         help="跨域汇总最近 N 次 run（见 --summary-last）")
     parser.add_argument("--summary-last", type=int, default=10, metavar="N",
@@ -847,6 +1039,7 @@ def main(argv: list[str] | None = None) -> int:
             variant=args.variant,
             repeat=args.repeat,
             dispatch_mode=args.dispatch,
+            grade_source=args.grade_source,
         )
     except EvaluationError as exc:
         sys.stderr.write(f"[eval] 错误：{redact_sensitive(str(exc))}\n")

@@ -86,14 +86,52 @@ def _has_counter_evidence(cause: Any) -> bool:
         return True
 
 
+#: 循环撞顶的信标（agent_loop_compat 在 max_turns 时用它替代正常输出）
+_UNFINISHED_SENTINELS: tuple[str, ...] = (
+    "[Max tool turns reached]",
+    "[Max tool turns",
+    "tool_failure_loop",
+)
+
+def _looks_unfinished(text: str) -> str | None:
+    """输出是否属于"没跑完"（而不是"跑完了但答得不合协议"）。
+
+    **为什么要单独立一类**：实测 8 次 live 里，至少有 3 次的 `invalid_output`
+    其实是"子代理撞了工具轮数上限"（输出被替换成 ``[Max tool turns reached]``）
+    或"话说到一半被截断"。它们和"模型给了完整散文结论"是两回事：
+
+    * 截断/撞顶 —— 模型**没拿到完整的作答机会**，是链路问题；
+    * 格式不合协议 —— 模型答完了，但没按 JSON 输出，是模型遵从度问题。
+
+    合成一类统计会让人误以为"模型诊断不出来"，实际上它连题都没答完。
+    **但仍然计入正确率分母**（不美化指标），只是单独计数、单独展示。
+    """
+
+    head = text.strip()[:200]
+    for sentinel in _UNFINISHED_SENTINELS:
+        if sentinel in head:
+            return "loop hit turn limit"
+    # 只用**可靠信号**判定，不靠长度猜。
+    # 试过"短且不含 { 就算截断"，结果把一个完整的短回答（"抱歉无法完成。"）
+    # 也判成了没跑完——离线用例立刻抓到。长度猜不准，宁可漏判：
+    # 真正的截断仍然会落进 invalid_output，只是 error 说明里不带"未完成"标签。
+    return None
+
+
 def categorize(case_run: Any) -> tuple[str, Any, str | None]:
-    """返回 ``(category, parsed_result_or_none, error)``。"""
+    """返回 ``(category, parsed_result_or_none, error)``。
+
+    类别：``crashed`` / ``unfinished`` / ``invalid_output`` / ``parsed``。
+    """
 
     if case_run.crashed:
         return "crashed", None, case_run.error
     text = case_run.raw_output or ""
     if not text.strip():
-        return "invalid_output", None, "empty output"
+        return "unfinished", None, "empty output"
+    unfinished_reason = _looks_unfinished(text)
+    if unfinished_reason is not None:
+        return "unfinished", None, unfinished_reason
     try:
         parsed = parse_diagnosis_result(text)
     except DiagnosisParseError as exc:
@@ -314,7 +352,7 @@ def score_case(case: dict[str, Any], case_run: Any) -> dict[str, Any]:
         "scenario": case.get("scenario"),
         "category": category,
         "parse_error": error if category == "invalid_output" else None,
-        "error": error if category in ("crashed", "invalid_output") else None,
+        "error": error if category in ("crashed", "invalid_output", "unfinished") else None,
         "top1_applicable": False,
         "evidence_applicable": False,
         "top1_hit": False,

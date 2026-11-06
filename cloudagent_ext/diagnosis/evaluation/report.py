@@ -23,6 +23,7 @@ from typing import Any
 
 __all__ = [
     "redact_sensitive",
+    "redact_payload",
     "build_run_id",
     "write_report",
 ]
@@ -59,6 +60,39 @@ def redact_sensitive(text: str) -> str:
     text = _PHONE_PATTERN.sub("1**********", text)
     text = _EMAIL_PATTERN.sub("***@***", text)
     return text
+
+
+def redact_payload(payload: Any) -> Any:
+    """**结构化**脱敏：逐字符串值脱敏，绝不改动 JSON 语法。
+
+    为什么不能对 ``json.dumps`` 的结果直接跑 :func:`redact_sensitive`：
+    正则会在**转义后的 JSON 文本**上工作，一旦匹配跨过 ``\\\\`` 边界，
+    就可能把两个反斜杠吃掉一个，留下 ``\\U`` 这种非法转义——实测崩过一次：
+
+        json.loads(redact_sensitive(json.dumps(case)))  →  Invalid \\escape
+        （line 1 column 194463，报告写不出来，整轮 live 数据丢失）
+
+    结构化脱敏从根上没有这个问题：字符串值单独脱敏，括号、引号、转义全由
+    ``json.dumps`` 最后一次性负责。
+    """
+
+    if isinstance(payload, str):
+        return redact_sensitive(payload)
+    if isinstance(payload, dict):
+        return {key: redact_payload(value) for key, value in payload.items()}
+    if isinstance(payload, (list, tuple)):
+        return [redact_payload(item) for item in payload]
+    return payload
+
+
+def _normalize(payload: Any) -> Any:
+    """把非 JSON 类型（datetime / 自定义对象）统一成可序列化的形态。
+
+    走一次 dumps/loads（**此时不做任何脱敏**，所以不会破坏语法），
+    等价于原来的 ``default=str`` 归一。
+    """
+
+    return json.loads(json.dumps(payload, ensure_ascii=False, default=str))
 
 
 # ---- 运行 ID ----
@@ -226,11 +260,12 @@ def write_report(
     out_dir = Path(out_dir)
     run["domain"] = run.get("domain", domain)
     # run.json（脱敏纵深防御：即使上游漏过，落盘前再过一次）
-    _dump(out_dir / "run.json", json.loads(redact_sensitive(json.dumps(run, ensure_ascii=False, default=str))))
+    # 注意顺序：先归一再脱敏。反过来（脱敏 JSON 字符串再 loads）会破坏转义，见 redact_payload。
+    _dump(out_dir / "run.json", redact_payload(_normalize(run)))
     for case in cases:
         _dump(
             out_dir / "cases" / f"{case['case_id']}.json",
-            json.loads(redact_sensitive(json.dumps(case, ensure_ascii=False, default=str))),
+            redact_payload(_normalize(case)),
         )
         trace = redact_sensitive(_conversation_markdown(case))
         (out_dir / "cases" / f"{case['case_id']}.trace.md").write_text(trace, encoding="utf-8")

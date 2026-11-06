@@ -1,0 +1,30 @@
+# 评测与本地验证依赖（不是运行 CloudAgent 本身的最小集）
+#
+# 为什么单独一份：`pyproject.toml` 的 dependencies 是产品运行时依赖，
+# 改变它会影响所有安装者与 CI 时间。这里只列「跑测试」与「跑 live 评测」额外需要的东西。
+#
+# 用法（Windows 用 `;` 分隔 PATH，POSIX 用 `:`）：
+#   python -m venv .venv
+#   .venv/Scripts/python -m pip install -r requirements-eval.txt
+#   PYTHONPATH='.;extensions/lkb/src' .venv/Scripts/python -m pytest tests/diagnosis -q
+#
+# PYTHONPATH 的两个条目来自 pyproject.toml 的 [tool.pytest.ini_options] pythonpath：
+#   "."                  → cloudagent_ext 包
+#   "extensions/lkb/src" → lkb 包（extensions/lkb 不是标准包布局）
+
+# --- 跑测试必需 ---------------------------------------------------------
+pytest>=8.0
+pytest-asyncio>=0.23
+PyYAML>=6.0
+jinja2>=3.1
+python-frontmatter>=1.0
+pathspec>=0.11
+sqlglot>=25.0
+psycopg[binary]>=3.1
+
+# --- 只有跑 live 评测（--mode live）才需要 ------------------------------
+# provider 构建会 import httpx（auth/codex_oauth.py），
+# deepseek 等 OpenAI 兼容端点走 openai SDK，未知 provider 回退 litellm。
+openai>=1.40
+litellm>=1.0
+httpx>=0.27
