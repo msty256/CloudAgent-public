@@ -91,9 +91,9 @@
       "断言索引必须删除（计数据低不等于无用）",
       "断言表很大（无统计证据时）"
     ],
-    "verification": "runtime",
-    "verified_at": "2026-11-01",
-    "verified_against": "缺 sql 域 seed（仓库内无 *.sql fixture），索引/计划断言需真实 PostgreSQL"
+    "verification": "static",
+    "verified_at": "2026-11-07",
+    "verified_against": "tests/fixtures/sql/seed.sql + 2026-11-07 实测：get_table_stats(customers)：n_live_tup=2000、region.n_distinct=4.0；计划含 'on customers'"
   },
   "expected_agents": [
     "sql-diagnosis"
