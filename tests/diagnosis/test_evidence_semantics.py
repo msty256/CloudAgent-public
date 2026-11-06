@@ -109,12 +109,18 @@ class TestOptionalFields:
 
 class TestRelationCleanup:
     def test_dangling_relation_dropped_at_construction(self) -> None:
+        """``consistent`` 引用了不存在的 id → 丢弃并标注。
+
+        阶段 4 之后 ``conflict`` 不再适用这条：它的目标天然在历史证据里，
+        见下面 ``test_conflict_may_target_external_evidence``。
+        """
+
         result = _result(
             [
                 _evidence(
                     relation=[
-                        {"kind": "conflict", "with": "ev:db:1"},
-                        {"kind": "conflict", "with": "ev:missing"},
+                        {"kind": "consistent", "with": "ev:db:1"},
+                        {"kind": "consistent", "with": "ev:missing"},
                     ]
                 )
             ]
@@ -123,8 +129,28 @@ class TestRelationCleanup:
         assert any("ev:missing" in item for item in result.reference_warnings())
         assert result.validate_references() == []
 
+    def test_conflict_may_target_external_evidence(self) -> None:
+        """``conflict`` 引用本次结果之外的 id 必须**保留**。
+
+        这是阶段 4 的触发源：跨轮冲突（这次观测 vs 上轮证据）如果在这里被丢掉，
+        失效传播就永远收不到信号——而且症状很隐蔽，日志里一切正常。
+        """
+
+        result = _result(
+            [
+                _evidence(
+                    relation=[
+                        {"kind": "conflict", "with": "ev:sql:1"},  # 上一轮的证据
+                        {"kind": "conflict", "with": "ev:missing"},  # 同样是外部 id
+                    ]
+                )
+            ]
+        )
+        assert [rel["with"] for rel in result.evidence[0].relation] == ["ev:sql:1", "ev:missing"]
+        assert any("external evidence_id" in item for item in result.reference_warnings())
+
     def test_warnings_are_pure_and_idempotent(self) -> None:
-        result = _result([_evidence(relation=[{"kind": "conflict", "with": "nope"}])])
+        result = _result([_evidence(relation=[{"kind": "consistent", "with": "nope"}])])
         first = result.reference_warnings()
         second = result.reference_warnings()
         assert first == second and len(first) == 1
@@ -132,7 +158,7 @@ class TestRelationCleanup:
     def test_to_dict_unaffected_by_warnings_call(self) -> None:
         """不调用 reference_warnings() 时，to_dict 也不得含悬空引用。"""
 
-        result = _result([_evidence(relation=[{"kind": "conflict", "with": "nope"}])])
+        result = _result([_evidence(relation=[{"kind": "consistent", "with": "nope"}])])
         before = json.dumps(result.to_dict(), ensure_ascii=False)
         assert "nope" not in before
         result.reference_warnings()
@@ -147,7 +173,7 @@ class TestRelationCleanup:
     def test_session_still_records_result(self) -> None:
         session = InvestigationSession(DiagnosisRequest(request_id="req-1", question="q"))
         task = session.delegate("sql-diagnosis", "查")
-        result = _result([_evidence(relation=[{"kind": "conflict", "with": "nope"}])])
+        result = _result([_evidence(relation=[{"kind": "consistent", "with": "nope"}])])
         result.task_id = task.task_id
         session.record_result(result)
         assert session.entries[0].status == "completed"

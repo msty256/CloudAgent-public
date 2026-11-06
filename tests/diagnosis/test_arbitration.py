@@ -53,18 +53,27 @@ def _ev(evidence_id: str, relation=()) -> Evidence:
 
 
 class TestEvidenceRelationConflict:
-    def test_cross_result_relation_is_dropped_by_model(self) -> None:
-        """已知协议边界：跨结果的 relation 在构造期被判悬空并丢弃。
+    def test_cross_result_relation_is_kept_for_propagation(self) -> None:
+        """**阶段 4 变更**：``conflict`` 现在可以引用本次结果之外的 evidence_id。
 
-        这意味着**子代理无法显式声明"我和另一个子代理冲突"**。
-        跨域冲突只能靠 ``opposing_claim`` 的文本启发式。此处把该行为固化，
-        将来若改协议（允许前向引用），这个用例会失败并提醒同步更新文档。
+        原用例名 ``test_cross_result_relation_is_dropped_by_model``，注释写着
+        "将来若改协议（允许前向引用），这个用例会失败并提醒同步更新文档"——
+        就是这里：失效传播需要"这次观测 vs 上轮证据"的冲突声明，
+        而按"必须引用本次结果"清洗会把它全部丢掉，触发源永远是空的。
+
+        **连带收益**：``detect_conflicts`` 遍历所有 entry 收集 id 再配对，
+        所以关系保留下来之后，跨域冲突**第一次能被仲裁层直接报出来**——
+        原先只能靠 ``opposing_claim`` 的文本启发式猜。
         """
 
         a = _result("sql-diagnosis", evidence=[_ev("e1", [{"kind": "conflict", "with": "e2"}])])
         b = _result("log-diagnosis", evidence=[_ev("e2")])
-        assert a.evidence[0].relation == []          # 被模型层丢弃
-        assert detect_conflicts([_entry(a), _entry(b)]) == []
+        assert [rel["with"] for rel in a.evidence[0].relation] == ["e2"]  # 保留下来了
+
+        conflicts = detect_conflicts([_entry(a), _entry(b)])
+        assert len(conflicts) == 1
+        assert conflicts[0].kind == "evidence_relation"
+        assert set(conflicts[0].evidence_ids) == {"e1", "e2"}
 
     def test_same_agent_conflict_is_internal(self) -> None:
         a = _result(

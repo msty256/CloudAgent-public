@@ -98,7 +98,7 @@ def test_prompt_includes_output_contract() -> None:
     prompt = build_investigation_prompt(_sample_task())
     assert render_result_contract() in prompt
     assert "```json" in prompt
-    assert "json 代码块结束" in prompt
+    assert "只能是一个 json 代码块" in prompt
 
 
 def test_prompt_appends_extra_context() -> None:
@@ -115,7 +115,7 @@ def test_contract_text_has_key_elements() -> None:
     contract = render_result_contract()
     for token in (
         "```json",
-        "json 代码块结束",
+        "只能是一个 json 代码块",
         "request_id",
         "非空字符串",
         "status",

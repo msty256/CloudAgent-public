@@ -185,7 +185,7 @@ class TestHarvest:
 
         rt = self._runtime()
         harvest_gaps(rt, _result(next_steps=["确认下游是否已经收到该批次"]))
-        assert rt.gaps == []
+        assert rt.gaps == ()
         assert rt.last_harvest_ids == []
 
     def test_harvest_caps_per_source(self) -> None:
@@ -460,7 +460,7 @@ class TestResolvedIsNotBlocked:
         rt = DiagnosisSessionRuntime(session=_session())
         task = rt.session.delegate("sql-diagnosis", "查 orders")
         rt.session.record_result(_result_with_task(task))
-        rt.gaps.append(Gap(gap_id="g1", statement="orders 是否有记录", status="resolved"))
+        rt.gap_store.add_existing(Gap(gap_id="g1", statement="orders 是否有记录", status="resolved"))
 
         summary = rt.gap_summary()
         assert summary.blocked_ids == ()

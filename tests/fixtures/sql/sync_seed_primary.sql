@@ -4,11 +4,19 @@
 -- 幂等：可重复执行。执行者需为表 owner 或超级用户；末尾显式授权只读角色，
 -- 不依赖 ALTER DEFAULT PRIVILEGES 的时序。
 --
--- 四张表的对照关系（orders / customers 由既有 seed.sql 提供）：
+-- 四张表的对照关系：
 --   orders     50000 行 vs 下游 0     —— 上游有、下游无（未落库）
 --   customers   2000 行 vs 下游 0     —— 同向未同步
 --   devices       50 行 vs 下游 50    —— 两侧一致（对照组）
 --   tenants        0 行 vs 下游 8     —— 上游无、下游有（反向差异）
+--
+-- ⚠ 2026-11-01 体检：本文件原本写「orders / customers 由既有 seed.sql 提供」，
+--   但仓库内并不存在那个 seed.sql（tests/fixtures/sql/ 只有本文件与 secondary）。
+--   所以 orders / customers 的上游数据**当前无处生成**，sync-001 的
+--   「上游 50000 / 下游 0」对照无法在本仓复现——该题 verification 记为 runtime。
+--   本文件只在下面补了 order_no 列（业务键），不自行灌数：
+--   灌 50000 行也验证不了 query_table_rows 在「表不存在」与「0 行」下的差异，
+--   反而会让人误以为这题已经能跑了。
 
 CREATE TABLE IF NOT EXISTS tenants (
     id      bigint PRIMARY KEY,

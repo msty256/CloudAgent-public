@@ -51,7 +51,10 @@ class TestOfflineEndToEnd:
     def test_case_classification(self, offline_summary: dict) -> None:
         assert offline_summary["counts"] == {
             "parsed": 5,     # 001/002/005/010/011
-            "invalid_output": 1,  # 012
+            "invalid_output": 1,  # 012：给了回答但不符合协议
+            # 阶段 5 新增：撞轮数上限 / 空输出 = "没跑完"，与"答错"分开计数。
+            # 这批离线样本里没有这种情形，所以是 0。
+            "unfinished": 0,
             "crashed": 0,
             "grader_error": 0,
         }
