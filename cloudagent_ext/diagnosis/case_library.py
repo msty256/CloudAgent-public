@@ -26,6 +26,7 @@ from typing import Any
 __all__ = [
     "CaseValidationError",
     "VALID_SEVERITIES",
+    "VALID_VERIFICATIONS",
     "validate_case",
     "load_cases",
     "load_case",
@@ -52,6 +53,16 @@ _EXPECTED_AGENTS = {
     "sync": ("sql-diagnosis",),
 }
 VALID_SEVERITIES = frozenset({"primary", "secondary", "none"})
+
+#: ground_truth 的"这条答案是怎么核过的"（2026-11-01 体检后新增）
+#:
+#: * ``static``   —— 对着仓库内代码/fixture 能核对，可在 CI 里复查；
+#: * ``runtime``  —— 需要真实数据库或运行期证据（执行计划、锁信息）；
+#: * ``external`` —— 依赖仓库外的样本项目，本仓无法判定。
+#:
+#: **统计正确率时只算 static / runtime**；external 的题单列，
+#: 否则"无法核实的题"会稀释成好看的数字。
+VALID_VERIFICATIONS = frozenset({"static", "runtime", "external"})
 
 _REQUIRED_TOP_LEVEL = (
     "schema_version",
@@ -128,6 +139,21 @@ def _validate_ground_truth(gt: Any) -> None:
 
     forbidden = gt.get("forbidden_findings", [])
     _require_str_list(forbidden, "forbidden_findings", allow_empty=True)
+
+    # ---- 校验元数据（2026-11-01 体检后新增）----
+    # 目的不是"卡住老文件"，而是让"这题能不能自动判对错"变成显式属性：
+    # `static`（对着代码/数据能核）、`runtime`（要真实 DB/运行期）、
+    # `external`（依赖仓库外的样本项目）。
+    # 统计正确率时只算前两类——否则 61% 无法核实的题会稀释成好看的数字。
+    verification = gt.get("verification")
+    if verification is not None:
+        _require(
+            verification in VALID_VERIFICATIONS,
+            f"ground_truth.verification must be one of {sorted(VALID_VERIFICATIONS)}",
+        )
+        if verification != "external":
+            _require_str(gt.get("verified_against"), "ground_truth.verified_against")
+
 
 
 def validate_case(data: Any) -> None:

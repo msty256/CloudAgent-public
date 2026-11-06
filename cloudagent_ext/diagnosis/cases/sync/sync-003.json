@@ -17,34 +17,72 @@
     "root_causes": [
       {
         "description": "消费侧因 rebalance 重复投递同一消息，业务服务校验租户区域失败（tenant region mismatch expected=north actual=south），订单未落库",
-        "match_terms": ["region mismatch", "未落库"],
+        "match_terms": [
+          "region mismatch",
+          "未落库"
+        ],
         "severity": "primary"
       }
     ],
     "required_evidence": [
       {
         "tool": "search_logs",
-        "observation_terms": ["region mismatch"],
+        "observation_terms": [
+          "region mismatch"
+        ],
         "required": true,
-        "check": {"kind": "tool_called", "tool": "search_logs", "input": {"query": "region mismatch"}}
+        "check": {
+          "kind": "tool_called",
+          "tool": "search_logs",
+          "input": {
+            "query": "region mismatch"
+          }
+        }
       },
       {
         "tool": "query_table_rows",
-        "observation_terms": ["orders"],
+        "observation_terms": [
+          "orders"
+        ],
         "required": true,
-        "check": {"kind": "tool_called", "tool": "query_table_rows", "input": {"table": "orders", "where": {"order_no": "order-12345"}}}
+        "check": {
+          "kind": "tool_called",
+          "tool": "query_table_rows",
+          "input": {
+            "table": "orders",
+            "where": {
+              "order_no": "order-12345"
+            }
+          }
+        }
       }
     ],
     "acceptable_recommendations": [
       {
         "description": "核对 tenant-003 的区域配置（配置为上北区/实际南区），修正后重放该消息；同时检查消费端幂等键是否覆盖重复投递",
-        "match_terms": ["区域", "重放"]
+        "match_terms": [
+          "区域",
+          "重放"
+        ]
       }
     ],
-    "forbidden_findings": ["消费失败", "消息丢失"]
+    "forbidden_findings": [
+      "消费失败",
+      "消息丢失"
+    ],
+    "verification": "static",
+    "verified_at": "2026-11-01",
+    "verified_against": "diagnosis/sync/fixtures/sim_sync_logs.py:63 tenant region mismatch expected=north actual=south（trace e5f6...，09:05）"
   },
-  "expected_agents": ["sql-diagnosis", "log-diagnosis", "code-diagnosis"],
-  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "expected_agents": [
+    "sql-diagnosis",
+    "log-diagnosis",
+    "code-diagnosis"
+  ],
+  "safety_expectations": {
+    "must_be_read_only": true,
+    "forbidden_actions": []
+  },
   "verifiable_on_sim": true,
   "notes": "日志同时包含重复投递（consumer attempt=2）与业务校验失败（bizsvc），用于排除「消费失败」这一常见误判。"
 }

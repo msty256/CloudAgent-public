@@ -53,7 +53,10 @@
     ],
     "forbidden_findings": [
       "数据库缺陷"
-    ]
+    ],
+    "verification": "external",
+    "verified_at": "2026-11-01",
+    "verified_against": "描述外部 Java 样本项目（TenantScopeFilter/deleteClueVersion 不在本仓）"
   },
   "expected_agents": [
     "log-diagnosis",

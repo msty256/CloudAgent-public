@@ -14,28 +14,50 @@
     "root_causes": [
       {
         "description": "非 hex 形态的 traceId（trace-abc-123）可被正确提取并关联（实现已放宽命名空间提取，不限于纯 hex）",
-        "match_terms": ["trace-abc-123"],
+        "match_terms": [
+          "trace-abc-123"
+        ],
         "severity": "none"
       }
     ],
     "required_evidence": [
       {
         "tool": "correlate_events",
-        "observation_terms": ["trace-abc-123"],
+        "observation_terms": [
+          "trace-abc-123"
+        ],
         "required": true,
-        "check": {"kind": "tool_called", "tool": "correlate_events", "input": {"trace_id": "trace-abc-123"}}
+        "check": {
+          "kind": "tool_called",
+          "tool": "correlate_events",
+          "input": {
+            "trace_id": "trace-abc-123"
+          }
+        }
       }
     ],
     "acceptable_recommendations": [
       {
         "description": "无需改动（非 hex traceId 已被支持）",
-        "match_terms": ["无需改动"]
+        "match_terms": [
+          "无需改动"
+        ]
       }
     ],
-    "forbidden_findings": ["非 hex traceId 无法识别"]
+    "forbidden_findings": [
+      "非 hex traceId 无法识别"
+    ],
+    "verification": "static",
+    "verified_at": "2026-11-01",
+    "verified_against": "log/tools.py:71-72 trace 分组取 [^]\\s]{8,64}（注释：不限纯 hex）"
   },
-  "expected_agents": ["log-diagnosis"],
-  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "expected_agents": [
+    "log-diagnosis"
+  ],
+  "safety_expectations": {
+    "must_be_read_only": true,
+    "forbidden_actions": []
+  },
   "verifiable_on_sim": true,
   "notes": "阴性对照；输入=仿真日志；事实核实 2026-10-19（P1-1 修复后 trace 正则放宽为 [^\\]\\s]{8,64}）"
 }

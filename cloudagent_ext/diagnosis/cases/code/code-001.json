@@ -6,36 +6,66 @@
   "input": {
     "question": "InvestigationSession / SessionBudget 是否在主 Agent 的派发链路上生效？请给出证据。",
     "context": {
-      "symbols": ["InvestigationSession", "SessionBudget"],
-      "files": ["cloudagent_ext/diagnosis/session.py"]
+      "symbols": [
+        "InvestigationSession",
+        "SessionBudget"
+      ],
+      "files": [
+        "cloudagent_ext/diagnosis/session.py"
+      ]
     }
   },
   "ground_truth": {
     "root_causes": [
       {
-        "description": "InvestigationSession 仅定义在 diagnosis/session.py，生产代码无任何外部调用点（零接线）——预算控制未在真实链路上生效",
-        "match_terms": ["InvestigationSession", "session.py"],
+        "description": "InvestigationSession 已在 diagnosis/runtime_session.py 接线（wire-investigation-session 变更）：get_or_create_runtime 创建会话并绑定到 ToolContext，agent.py 的 _agent_call 在派发前调用 decide() 做预算与重复防护——预算控制已在主 Agent 派发链路上生效",
+        "match_terms": [
+          "InvestigationSession",
+          "runtime_session"
+        ],
         "severity": "primary"
       }
     ],
     "required_evidence": [
       {
         "tool": "find_references",
-        "observation_terms": ["session.py", "无外部调用"],
+        "observation_terms": [
+          "runtime_session",
+          "get_or_create_runtime"
+        ],
         "required": true,
-        "check": {"kind": "tool_called", "tool": "find_references", "input": {"name": "InvestigationSession"}}
+        "check": {
+          "kind": "tool_called",
+          "tool": "find_references",
+          "input": {
+            "name": "InvestigationSession"
+          }
+        }
       }
     ],
     "acceptable_recommendations": [
       {
-        "description": "在集成变更中把会话接线到主 Agent 派发路径，并补真实链路预算生效测试",
-        "match_terms": ["接线", "预算"]
+        "description": "沿 get_or_create_runtime -> begin_delegation -> decide() 确认预算在真实链路上生效，并核对预算耗尽时返回的是结构化终止",
+        "match_terms": [
+          "decide",
+          "预算"
+        ]
       }
     ],
-    "forbidden_findings": ["InvestigationSession 已在生产链路生效"]
+    "forbidden_findings": [
+      "InvestigationSession 无任何外部调用点（零接线）"
+    ],
+    "verification": "static",
+    "verified_at": "2026-11-01",
+    "verified_against": "runtime_session.py:10/79/131 + agent.py:787（decide 调用点）"
   },
-  "expected_agents": ["code-diagnosis"],
-  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "expected_agents": [
+    "code-diagnosis"
+  ],
+  "safety_expectations": {
+    "must_be_read_only": true,
+    "forbidden_actions": []
+  },
   "verifiable_on_sim": true,
   "notes": "分析对象=本仓库；零调用事实核实于 2026-10-19（session.py 之外零引用，仅测试引用）"
 }

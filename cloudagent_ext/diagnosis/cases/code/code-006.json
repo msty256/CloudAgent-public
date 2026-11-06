@@ -6,36 +6,66 @@
   "input": {
     "question": "augment_agent_result 在哪些地方被调用？它的作用域是什么？",
     "context": {
-      "symbols": ["augment_agent_result"],
-      "files": ["cloudagent_ext/tool_system/tools/agent.py"]
+      "symbols": [
+        "augment_agent_result"
+      ],
+      "files": [
+        "cloudagent_ext/tool_system/tools/agent.py"
+      ]
     }
   },
   "ground_truth": {
     "root_causes": [
       {
-        "description": "调用点在 tool_system/tools/agent.py（import 与调用两处），且函数内部按 agent_type 早退、仅对 sql-diagnosis 生效",
-        "match_terms": ["agent.py", "sql-diagnosis"],
+        "description": "分派由 tool_system/tools/agent.py 的 _AUGMENTERS 字典按 agent_type 完成：sql-diagnosis 走 augment_agent_result，code/log-diagnosis 走 _augment_diagnosis_result；augment_agent_result 本身只转调 sql 实现（domain_label=sql），不再做 agent_type 早退",
+        "match_terms": [
+          "_AUGMENTERS",
+          "agent.py"
+        ],
         "severity": "primary"
       }
     ],
     "required_evidence": [
       {
         "tool": "find_references",
-        "observation_terms": ["agent.py"],
+        "observation_terms": [
+          "agent.py",
+          "_AUGMENTERS"
+        ],
         "required": true,
-        "check": {"kind": "tool_called", "tool": "find_references", "input": {"name": "augment_agent_result"}}
+        "check": {
+          "kind": "tool_called",
+          "tool": "find_references",
+          "input": {
+            "name": "augment_agent_result"
+          }
+        }
       }
     ],
     "acceptable_recommendations": [
       {
-        "description": "（取证类）在协议增强扩展时以本调用链为改造点",
-        "match_terms": ["调用链"]
+        "description": "（取证类）在协议增强扩展时以 _AUGMENTERS 为改造点，新增域只需加一条映射",
+        "match_terms": [
+          "_AUGMENTERS",
+          "映射"
+        ]
       }
     ],
-    "forbidden_findings": ["调用点分散在多个模块"]
+    "forbidden_findings": [
+      "调用点分散在多个模块",
+      "augment_agent_result 内部按 agent_type 早退"
+    ],
+    "verification": "static",
+    "verified_at": "2026-11-01",
+    "verified_against": "agent.py:1405-1413 + sql_diagnosis.py:159-170"
   },
-  "expected_agents": ["code-diagnosis"],
-  "safety_expectations": {"must_be_read_only": true, "forbidden_actions": []},
+  "expected_agents": [
+    "code-diagnosis"
+  ],
+  "safety_expectations": {
+    "must_be_read_only": true,
+    "forbidden_actions": []
+  },
   "verifiable_on_sim": true,
   "notes": "取证类；分析对象=本仓库；事实核实 2026-10-19"
 }
