@@ -183,6 +183,10 @@ TOOL_SET_SQL_DIAGNOSIS: list[str] = [
     "get_table_stats",
     "get_lock_info",
     "query_table_rows",
+    # 阶段 3（T3.4）：取回被压缩归档的取证原文（只读）
+    "recall_evidence",
+    # 知识库检索（RAG）：查历史案例/设计文档（只读）
+    "search_knowledge",
 ]
 
 # P3.2（add-code-analysis-domain）：代码诊断子代理的受限工具集
@@ -196,6 +200,10 @@ TOOL_SET_CODE_DIAGNOSIS: list[str] = [
     "TodoWrite",
     "find_symbol",
     "find_references",
+    # 阶段 3（T3.4）：取回被压缩归档的取证原文（只读）
+    "recall_evidence",
+    # 知识库检索（RAG）：查历史案例/设计文档（只读）
+    "search_knowledge",
 ]
 
 # P3.3（add-log-analysis-domain）：日志诊断子代理的受限工具集
@@ -209,6 +217,10 @@ TOOL_SET_LOG_DIAGNOSIS: list[str] = [
     "get_log_context",
     "parse_stack_trace",
     "correlate_events",
+    # 阶段 3（T3.4）：取回被压缩归档的取证原文（只读）
+    "recall_evidence",
+    # 知识库检索（RAG）：查历史案例/设计文档（只读）
+    "search_knowledge",
 ]
 
 

@@ -100,6 +100,7 @@ python -m cloudagent_ext.diagnosis.evaluation.runner --mode offline --domain syn
 | [使用指南](docs/usage.md) | CLI / REPL、诊断流程、`/tasks` 解读、评测与报告 |
 | [架构说明](docs/architecture.md) | 运行时分层、诊断链路、证据协议、缺口机制、扩展点 |
 | [安全模型](docs/security.md) | 只读三重防线、权限模式、子 Agent 可见范围 |
+| [知识库检索](docs/knowledge.md) | 历史案例+文档索引、BM25/向量混合检索、工具契约、评测与安全边界 |
 | [常见问题](docs/faq.md) | 报错排查、能力边界、接入其它数据源 |
 
 ## 项目状态

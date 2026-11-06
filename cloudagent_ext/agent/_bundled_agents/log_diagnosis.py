@@ -25,6 +25,7 @@ from cloudagent_ext.agent.policy import (
     build_agent_prompt,
 )
 from cloudagent_ext.agent.registry import AgentRegistry
+from cloudagent_ext.diagnosis.knowledge.provision import provision_with_knowledge
 
 _LOG_DIAGNOSIS_IDENTITY = (
     "You are the log diagnosis specialist for CloudAgent. Investigate failures from "
@@ -78,7 +79,8 @@ _LOG_TOOL_NAMES: tuple[str, ...] = (
     tools=TOOL_SET_LOG_DIAGNOSIS,
     skills=["log-analysis"],
     permission_mode="dontAsk",
-    provision_tools=lambda registry: register_log_diagnosis_tools(registry),
+    # 阶段 3（T3.4）：装配后再补召回工具（provision_with_recall 会兜住早退路径）
+    provision_tools=lambda registry: provision_with_knowledge(register_log_diagnosis_tools, registry),
 )
 def _log_diagnosis_prompt() -> str:
     """系统提示 = identity + guidance + 统一输出约定（运行时拼接，防漂移）。"""

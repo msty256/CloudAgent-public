@@ -145,6 +145,14 @@ db = [
     "psycopg[binary]>=3.2",
     "sqlglot>=25",
 ]
+# 知识库检索（RAG）的稠密向量层：bge-small-zh 本地 ONNX 推理 + FAISS 向量索引。
+# 默认不安装；不装时检索自动退回 BM25/稀疏向量，功能不中断。
+# 安装：pip install -e ".[kb]"；模型放 ~/.cloudagent/models/bge-small-zh-v1.5/
+kb = [
+    "faiss-cpu>=1.8",
+    "onnxruntime>=1.17",
+    "tokenizers>=0.15",
+]
 # ``all`` is the catch-all extra consumed by ``install.sh`` (one-click
 # installer). NOTE: an earlier draft used a self-reference
 # (``all = ["cloudagent[dev]"]``) which deadlocks editable

@@ -25,6 +25,7 @@ from cloudagent_ext.agent.policy import (
     build_agent_prompt,
 )
 from cloudagent_ext.agent.registry import AgentRegistry
+from cloudagent_ext.diagnosis.knowledge.provision import provision_with_knowledge
 
 _SQL_DIAGNOSIS_IDENTITY = (
     "You are the SQL diagnosis specialist for CloudAgent. Investigate SQL performance "
@@ -83,7 +84,8 @@ _DB_TOOL_NAMES: tuple[str, ...] = (
     # fix-sql-diagnosis-tool-provisioning：按需装配接缝——Agent tool 在
     # spawn 前调用它，把只读 DB 工具集注册进子代理的生效注册表（幂等；
     # lambda 延迟解析，函数定义在本模块后部）。
-    provision_tools=lambda registry: register_sql_diagnosis_tools(registry),
+    # 阶段 3（T3.4）：装配后再补召回工具（provision_with_recall 会兜住早退路径）
+    provision_tools=lambda registry: provision_with_knowledge(register_sql_diagnosis_tools, registry),
 )
 def _sql_diagnosis_prompt() -> str:
     """系统提示 = identity + guidance + 统一输出约定（运行时拼接，防漂移）。"""

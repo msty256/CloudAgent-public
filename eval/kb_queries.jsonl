@@ -1,0 +1,12 @@
+{"query": "上游有数据下游没有，订单在报表里查不到", "expected": ["cases/sync/sync-001.json"]}
+{"query": "增量同步任务从九点开始没有产出，下游没有新数据", "expected": ["cases/sync/sync-002.json"]}
+{"query": "只读数据库账号怎么配置，权限怎么给", "expected": ["docs/installation.md", "docs/security.md"]}
+{"query": "SQL 白名单允许哪些语句，怎么防止写操作", "expected": ["docs/security.md"]}
+{"query": "为什么每条结论都必须带 evidence_id", "expected": ["docs/architecture.md", "docs/diagnosis-redesign.md"]}
+{"query": "待验证项和缺口怎么回灌到下一轮取证", "expected": ["docs/architecture.md"]}
+{"query": "诊断报告怎么脱敏，哪些字段不能留", "expected": ["docs/security.md"]}
+{"query": "离线评测怎么跑，命令是什么", "expected": ["docs/usage.md", "docs/installation.md", "docs/faq.md"]}
+{"query": "支持 MySQL 吗，现在能连哪些数据库", "expected": ["docs/faq.md"]}
+{"query": "测试集的标准答案过期了怎么发现", "expected": ["docs/case-audit-2026-11-01.md"]}
+{"query": "一次完整诊断消耗多少 token 和多少时间", "expected": ["docs/needs-quota.md"]}
+{"query": "两个子 Agent 的结论冲突了，系统怎么处理", "expected": ["docs/architecture.md"]}
