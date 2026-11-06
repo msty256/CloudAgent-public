@@ -38,7 +38,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from cloudagent_ext.diagnosis.evaluation.report import redact_sensitive
+from cloudagent_ext.utils.redaction import redact_sensitive
 from cloudagent_ext.tool_system.build_tool import Tool, build_tool
 from cloudagent_ext.tool_system.context import ToolContext
 from cloudagent_ext.tool_system.protocol import ToolResult
