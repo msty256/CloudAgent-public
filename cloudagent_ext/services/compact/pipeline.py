@@ -32,6 +32,7 @@ from cloudagent_ext.context_system.microcompact import (  # pylint: disable=no-n
     TimeBasedMCConfig,
     microcompact_typed_messages,
 )
+from cloudagent_ext.diagnosis.switches import context_reduce_enabled  # 阶段 5 分臂开关
 from cloudagent_ext.providers.base import BaseProvider  # pylint: disable=no-name-in-module
 from cloudagent_ext.types.messages import Message  # pylint: disable=no-name-in-module
 
@@ -58,6 +59,8 @@ class CompressionResult:
     tokens_saved: int = 0
     layers_applied: list[str] = field(default_factory=list)
     autocompact_result: Any | None = None  # CompactionResult if layer 5 ran
+    #: 阶段 3（Layer 2.5）的结构归约统计：折了几条、产生哪些句柄、失败几条
+    reduce_stats: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -70,6 +73,27 @@ class PipelineConfig:
 
     # Layer 2: snip compact
     snip_keep_recent: int = 10
+
+    # Layer 2.5: structural reduce（阶段 3）——把取证大结果"折"成摘要 + 句柄。
+    # 与 Layer 3 的 microcompact 正交：那边是**清空**可重新获得的中间产物，
+    # 这边是**折叠**一次性取到的证据。两张名单不重叠，互不替代。
+    sr_enabled: bool = True
+    #: 低于这个字符数不值得归档（摘要未必比原文短）
+    sr_min_chars: int = 4_000
+    #: 一轮最多折几条——改历史消息会让 prompt cache 失效，一次改太多等于全废
+    sr_max_items: int = 8
+    #: 最新 N 条取证结果**不折**。压缩发生在"每轮请求前"，连当轮刚查到的也折掉
+    #: 会让模型看不到明细——省 token 变成拿诊断质量换。
+    sr_keep_recent: int = 2
+    #: 归档用的会话标识；为空则**只渲染摘要、不写句柄**（避免留下取不回的句柄）
+    sr_session_id: str = ""
+    #: 归档根目录；None = 走 get_user_config_dir()/evidence
+    sr_evidence_root: Path | str | None = None
+    #: 运行期统计出口（通常是 ``ToolContext``）。管线把 Layer 2.5 的统计写回
+    #: ``stats_sink.compaction_stats``，评测层再从那里读。
+    #: 用"传引用"而不是"加返回值"，是因为 ``run()`` 的返回契约被多处依赖，
+    #: 改签名会牵动整条 query 链路。
+    stats_sink: Any | None = None
 
     # Layer 3: microcompact
     # TS time-based MC is disabled by default (GrowthBook enabled: false),
@@ -165,7 +189,25 @@ def build_production_pipeline_config(
         max_output_tokens=max_output_tokens,
         read_file_state=read_file_state or None,
         autocompact_tracking=autocompact_tracking,
+        # 阶段 3：结构归约需要一个稳定的归档目录名。优先诊断域的真实 request_id
+        # （这样一次诊断的证据都落在同一个目录下），否则用 ToolContext.session_id。
+        # 两者都没有 → 空串 → 归约只出摘要、不写句柄（不传播原则）。
+        # 阶段 5：对照实验需要一个独立开关。默认值与改造前一致（开启），
+        # 环境变量只用于分臂，不改变生产默认行为。
+        sr_enabled=context_reduce_enabled(),
+        sr_session_id=_resolve_evidence_session_id(tool_context),
+        # 统计出口：管线把 Layer 2.5 的结果写回 tool_context.compaction_stats，
+        # 评测层从 meta 里读。不新开参数通道，避免动整条 query 调用链。
+        stats_sink=tool_context,
     )
+
+
+def _resolve_evidence_session_id(tool_context: Any) -> str:
+    """证据归档的目录名——**直接复用存储层的解析**，保证读写同一个目录。"""
+
+    from cloudagent_ext.services.compact.evidence_store import resolve_session_id
+
+    return resolve_session_id(tool_context)
 
 
 class CompressionPipeline:
@@ -186,6 +228,44 @@ class CompressionPipeline:
         messages: list[Message],
         input_token_count: int = 0,
     ) -> CompressionResult:
+        """跑完整管线，并把 Layer 2.5 的统计写回 ``config.stats_sink``。
+
+        包一层的原因：``_run_layers`` 里有 5 处 early-exit 直接 return，
+        逐个加"写回"既啰嗦又容易漏。统一在外层收口，一处就够。
+        """
+
+        result = await self._run_layers(messages, input_token_count)
+        self._publish_stats(result.reduce_stats)
+        return result
+
+    def _publish_stats(self, stats: dict[str, Any] | None) -> None:
+        """把结构归约统计写到 sink 上（失败不影响管线）。
+
+        顺带把**归档根目录**也写过去：召回工具必须用同一个目录去找，
+        否则句柄永远取不回来（不报错，只是取不到）。
+        """
+
+        sink = getattr(self._config, "stats_sink", None)
+        if sink is None:
+            return
+        root = getattr(self._config, "sr_evidence_root", None)
+        if root is not None:
+            try:
+                setattr(sink, "evidence_root", str(root))
+            except Exception:  # noqa: BLE001
+                logger.debug("evidence root publish failed", exc_info=True)
+        if not stats:
+            return
+        try:
+            setattr(sink, "compaction_stats", dict(stats))
+        except Exception:  # noqa: BLE001 — sink 可能是 slots 类或只读对象
+            logger.debug("compaction stats publish failed", exc_info=True)
+
+    async def _run_layers(
+        self,
+        messages: list[Message],
+        input_token_count: int = 0,
+    ) -> CompressionResult:
         """
         Run all compression layers in order, short-circuiting if enough
         tokens are freed by early layers.
@@ -201,6 +281,8 @@ class CompressionPipeline:
         cfg = self._config
         total_saved = 0
         layers_applied: list[str] = []
+        # 阶段 3：结构归约的统计（各 early-exit 都要带回去，否则中途返回就丢了）
+        reduce_stats: dict[str, Any] = {}
         current_messages = messages
 
         # lazy compression gate. When est_input_tokens is well
@@ -247,6 +329,7 @@ class CompressionPipeline:
                         messages=current_messages,
                         tokens_saved=total_saved,
                         layers_applied=layers_applied,
+                        reduce_stats=reduce_stats,
                     )
         except Exception:
             logger.warning("Layer 1 (tool_result_budget) failed", exc_info=True)
@@ -266,9 +349,43 @@ class CompressionPipeline:
                         messages=current_messages,
                         tokens_saved=total_saved,
                         layers_applied=layers_applied,
+                        reduce_stats=reduce_stats,
                     )
         except Exception:
             logger.warning("Layer 2 (snip_compact) failed", exc_info=True)
+
+        # --- Layer 2.5: Structural Reduce（阶段 3）---
+        # 放在 Layer 3 之前：先把取证结果折成摘要 + 句柄，之后 microcompact
+        # 只处理它自己那份白名单（Read/Grep/Bash 等），两者不会打架。
+        # 归约失败**不退回清空**——清空等于丢证据（见下面 Layer 3 的注释）。
+        if cfg.sr_enabled:
+            try:
+                from cloudagent_ext.services.compact.evidence_store import EvidenceStore
+                from cloudagent_ext.services.compact.structural_reduce import (
+                    reduce_forensic_messages,
+                )
+
+                store = EvidenceStore(root=Path(cfg.sr_evidence_root) if cfg.sr_evidence_root else None)
+                outcome = reduce_forensic_messages(
+                    current_messages,
+                    store=store,
+                    session_id=cfg.sr_session_id,
+                    min_chars=cfg.sr_min_chars,
+                    max_items=cfg.sr_max_items,
+                    keep_recent=cfg.sr_keep_recent,
+                )
+                reduce_stats = outcome.as_dict()
+                if outcome.reduced_count > 0:
+                    current_messages = outcome.messages
+                    layers_applied.append("structural_reduce")
+                    logger.debug(
+                        "Layer 2.5 (structural_reduce): %d 条，省 %d 字符，句柄 %d 个",
+                        outcome.reduced_count,
+                        outcome.saved_chars,
+                        len(outcome.handles),
+                    )
+            except Exception:
+                logger.warning("Layer 2.5 (structural_reduce) failed", exc_info=True)
 
         # --- Layer 3: Microcompact ---
         # Gated by mc_enabled (default False) to match TS where microcompact
@@ -293,6 +410,7 @@ class CompressionPipeline:
                             messages=current_messages,
                             tokens_saved=total_saved,
                             layers_applied=layers_applied,
+                            reduce_stats=reduce_stats,
                         )
             except Exception:
                 logger.warning("Layer 3 (microcompact) failed", exc_info=True)
@@ -373,6 +491,7 @@ class CompressionPipeline:
             tokens_saved=total_saved,
             layers_applied=layers_applied,
             autocompact_result=autocompact_result,
+            reduce_stats=reduce_stats,
         )
 
 

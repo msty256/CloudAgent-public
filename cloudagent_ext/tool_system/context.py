@@ -316,6 +316,15 @@ class ToolContext:
     # interpreted as "unknown" by callers; substitutions yield an empty
     # string in that case.
     session_id: str | None = None
+    # 阶段 3（T3.5）：压缩管线的运行期统计出口。管线把"折了几条、省了多少字符、
+    # 产生哪些句柄"写回这里，评测层再从 meta 里读出来。
+    # 放在 ToolContext 上是因为它是 query 与执行器之间唯一已经在传的共享对象；
+    # 另开一条参数通道要改遍 query 的整条调用链，代价不成比例。
+    compaction_stats: dict[str, Any] | None = None
+    # 阶段 3（T3.4/T3.5）：证据归档根目录。**写入与读取必须看到同一个值**——
+    # 压缩时用 A 目录存、召回时用 B 目录读，句柄就永远取不回来，而且不报错。
+    # 只有配置了 `sr_evidence_root`（测试/探针）才会设；生产为 None → 两边都走默认目录。
+    evidence_root: str | None = None
     # LKB Plan binding. The workspace selects a shared Board, while this
     # session-scoped field selects one Plan graph inside it. Subagents
     # inherit the value explicitly; unrelated sessions do not.
