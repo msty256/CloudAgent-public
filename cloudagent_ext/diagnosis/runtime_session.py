@@ -47,6 +47,7 @@ from cloudagent_ext.diagnosis.models import (
     new_request_id,
 )
 from cloudagent_ext.diagnosis.protocol import DiagnosisParseError, parse_diagnosis_result
+from cloudagent_ext.diagnosis.switches import SWITCHES
 from cloudagent_ext.diagnosis.models import Gap  # noqa: E402
 from cloudagent_ext.diagnosis.gap_store import GapStore  # noqa: E402
 
@@ -438,21 +439,26 @@ def default_budget() -> SessionBudget:
 
 
 def domain_gate_mode() -> str:
-    """域闸档位（``off`` / ``same_target`` / ``strict``）；非法值回退默认并告警。"""
+    """域闸档位（``off`` / ``same_target`` / ``strict``）；非法值回退默认并告警。
 
-    raw = os.environ.get(ENV_DOMAIN_GATE)
+    env 名与合法值取自 ``switches.SWITCHES["domain_gate"]``（P2a 起登记表是
+    唯一事实源，本函数保留告警行为）。
+    """
+
+    spec = SWITCHES["domain_gate"]
+    raw = os.environ.get(spec.env)
     if raw is None or not str(raw).strip():
-        return DEFAULT_DOMAIN_GATE
+        return spec.default
     text = str(raw).strip().lower()
-    if text not in GATE_MODES:
+    if text not in spec.modes:
         logger.warning(
             "invalid %s=%r (must be one of %s); falling back to %s",
-            ENV_DOMAIN_GATE,
+            spec.env,
             raw,
-            sorted(GATE_MODES),
-            DEFAULT_DOMAIN_GATE,
+            sorted(spec.modes),
+            spec.default,
         )
-        return DEFAULT_DOMAIN_GATE
+        return spec.default
     return text
 
 

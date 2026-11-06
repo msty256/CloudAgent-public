@@ -18,20 +18,32 @@
 第 2 条最容易被破坏：开关加在三个地方，其中一处忘了判断，
 "关了"只是半关，对照结果就是脏的——而且从数据上完全看不出来。
 
-**每加一个机制开关，都要同时加一条守卫用例**（`RUNNER` 侧的泄漏守卫 +
-`tests/diagnosis/test_switches.py` 的语义用例）。
+**加一个机制开关的固定流程**（P2a 起此流程由 ``SWITCHES`` 登记表落地）：
+
+1. 在 ``SWITCHES`` 里登记（env / kind / default / off_value / off_effect）；
+2. 读取点必须走 ``is_off()`` / ``current()``（或从登记表取 env 与合法值），
+   不许自己裸读 ``os.environ``——``gap_injection`` 修前只认字面量 ``"off"``
+   就是自己读的教训（写 ``=false`` 会静默继续注入）；
+3. 在 ``tests/diagnosis/test_switch_guards.py`` 里加一条
+   "关掉 ⇒ 行为消失"的用例（断言行为差异，不是断言开关读到了什么）。
 """
 
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
+from typing import Any
 
 __all__ = [
     "ENV_CONTEXT_REDUCE",
     "ENV_EVIDENCE_INVALIDATION",
-    "env_flag",
+    "SWITCHES",
+    "SwitchSpec",
     "context_reduce_enabled",
+    "current",
+    "env_flag",
     "evidence_invalidation_enabled",
+    "is_off",
 ]
 
 #: 阶段 3：结构归约（取证大结果 → 摘要 + 句柄）。关掉 = 回到"清空/不处理"的老行为。
@@ -60,6 +72,99 @@ def env_flag(name: str, default: bool) -> bool:
     if value in _FALSY:
         return False
     return default
+
+
+# ---------------------------------------------------------------------------
+# P2a：开关登记表——全部机制开关的唯一事实源
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SwitchSpec:
+    """一个机制开关的登记项。"""
+
+    name: str  # 逻辑名，如 "gap_injection"
+    env: str  # 环境变量名
+    kind: str  # "bool" | "mode"
+    default: Any  # True/False 或 "same_target"
+    modes: frozenset[str] = frozenset()  # kind=="mode" 时的合法值
+    off_value: Any = None  # "关"的取值：bool→False，mode→对应档位
+    #: 关掉后**应当消失**的可观察行为（人话）。守卫用例按它写，报告按它展示
+    off_effect: str = ""
+
+
+#: 全部机制开关。**新增开关必须在这里登记**（见模块 docstring 的三步流程）。
+SWITCHES: dict[str, SwitchSpec] = {
+    "context_reduce": SwitchSpec(
+        name="context_reduce",
+        env=ENV_CONTEXT_REDUCE,
+        kind="bool",
+        default=True,
+        off_value=False,
+        off_effect="CompressionPipeline 不再做结构归约，取证大结果原样留在上下文",
+    ),
+    "evidence_invalidation": SwitchSpec(
+        name="evidence_invalidation",
+        env=ENV_EVIDENCE_INVALIDATION,
+        kind="bool",
+        default=True,
+        off_value=False,
+        off_effect="证据冲突不再把 resolved 的缺口退回 open",
+    ),
+    "gap_injection": SwitchSpec(
+        name="gap_injection",
+        env="CLOUDAGENT_GAP_INJECTION",
+        kind="bool",
+        default=True,
+        off_value=False,
+        off_effect="子代理提示不再注入「当前有效状态」段（已确认/缺口/预算）",
+    ),
+    "domain_gate": SwitchSpec(
+        name="domain_gate",
+        env="CLOUDAGENT_DOMAIN_GATE",
+        kind="mode",
+        default="same_target",
+        modes=frozenset({"off", "same_target", "strict"}),
+        off_value="off",
+        off_effect="域闸不再拦停重复委派（domain_gate 一律放行）",
+    ),
+    # 注意："关"不是 "off"（不在三档合法值里），而是 agent_report——
+    # 那是独立核查器不运行的档位
+    "goal_stop_strategy": SwitchSpec(
+        name="goal_stop_strategy",
+        env="CLOUDAGENT_GOAL_STOP_STRATEGY",
+        kind="mode",
+        default="hybrid",
+        modes=frozenset({"agent_report", "transcript", "hybrid"}),
+        off_value="agent_report",
+        off_effect="独立核查器不运行（assessor 不触发）",
+    ),
+}
+
+
+def current(name: str) -> Any:
+    """开关当前生效值（登记表的统一读取入口）。
+
+    mode 开关对**非法值静默回退默认**；带告警的读取（``domain_gate_mode`` /
+    ``assessor_strategy``）从登记表取 env 与合法值后自行 warning。
+    """
+
+    spec = SWITCHES[name]
+    if spec.kind == "bool":
+        return env_flag(spec.env, spec.default)
+    raw = os.environ.get(spec.env)
+    if raw is None or not str(raw).strip():
+        return spec.default
+    text = str(raw).strip().lower()
+    if text not in spec.modes:
+        return spec.default
+    return text
+
+
+def is_off(name: str) -> bool:
+    """开关当前是否处于"关"档（``off_value``）。"""
+
+    return current(name) == SWITCHES[name].off_value
 
 
 def context_reduce_enabled() -> bool:
