@@ -9,8 +9,10 @@
 
 """case 集校验元数据的守护测试（2026-11-01 体检后新增）。
 
-背景：38 题里只有 15 题能在仓库内核实，但正确率一直在用全 38 题算。
-`code-007` 的 gt 过期（描述已修掉的旧行为）就是被这个盲区藏住的。
+背景：2026-11-01 体检时 38 题里只有 15 题能在仓库内核实，但正确率一直在用
+全 38 题算；`code-007` 的 gt 过期（描述已修掉的旧行为）就是被这个盲区藏住的。
+2026-11-07 P1 把 sql 域 seed 迁入仓库后，sql 域 11 题升级为 `static`，
+仓库内可复核的分母从 17 提到 28。
 
 这里守三件事：
 
@@ -33,10 +35,13 @@ from cloudagent_ext.diagnosis.case_library import (
     validate_case,
 )
 
-#: 2026-11-01 体检定版：任何变动都必须是有意识的
+#: 2026-11-01 体检定版：任何变动都必须是有意识的。
+#: 2026-11-07 P1：sql 域 seed 迁入仓库（tests/fixtures/sql/seed.sql），
+#: 11 题 runtime → static（sql-001..009/013/014），分布 17/15/6 → 28/4/6。
+#: runtime 余 4 = sql-010/011/012 + sync-001（能力边界/环境降级/协议行为，非数据问题）。
 EXPECTED_TOTAL = 38
-EXPECTED_STATIC = 17
-EXPECTED_RUNTIME = 15
+EXPECTED_STATIC = 28
+EXPECTED_RUNTIME = 4
 EXPECTED_EXTERNAL = 6
 
 
@@ -102,11 +107,13 @@ class TestDistributionLocked:
         assert summary["unverifiable"] == EXPECTED_EXTERNAL
 
     def test_static_set_is_exact(self, all_cases: list[dict]) -> None:
-        """锁住具体是哪 17 题——降级/新增都必须显式改这张表。"""
+        """锁住具体是哪 28 题——降级/新增都必须显式改这张表。"""
 
         expected = {
             "code-001", "code-002", "code-003", "code-004", "code-005", "code-006", "code-007",
             "log-001", "log-002", "log-003", "log-004", "log-005", "log-006",
+            "sql-001", "sql-002", "sql-003", "sql-004", "sql-005",
+            "sql-006", "sql-007", "sql-008", "sql-009", "sql-013", "sql-014",
             "sync-002", "sync-003", "sync-004", "sync-005",
         }
         actual = {c["case_id"] for c in all_cases if _gt(c).get("verification") == "static"}

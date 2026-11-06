@@ -54,9 +54,9 @@
       "虚构具体阻塞会话或锁持有者",
       "断言不存在锁问题（单次快照不能排除历史锁等待）"
     ],
-    "verification": "runtime",
-    "verified_at": "2026-11-01",
-    "verified_against": "缺 sql 域 seed（仓库内无 *.sql fixture），索引/计划断言需真实 PostgreSQL"
+    "verification": "static",
+    "verified_at": "2026-11-07",
+    "verified_against": "tests/fixtures/sql/seed.sql + 2026-11-07 实测：get_lock_info 返回 waiting: []（seed 重放后的库当前无等待锁）"
   },
   "expected_agents": [
     "sql-diagnosis"
