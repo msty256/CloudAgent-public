@@ -3,7 +3,7 @@
 | 项 | 值 |
 |---|---|
 | 工作包 | P2a |
-| 状态 | `in_progress`（2026-11-07 由 ZCode 认领） |
+| 状态 | `in_review`（完成待审；2026-11-07 ZCode） |
 | 负责人 | ZCode |
 | 分支 | `feat/p2a-switch-registry` |
 | 规格 | [`../design/p2a-switch-registry.md`](../design/p2a-switch-registry.md) |
