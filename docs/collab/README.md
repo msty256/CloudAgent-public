@@ -13,7 +13,7 @@
 
 | 序 | 工作包 | 标题 | 状态 | 负责人 | 仓库 | 设计与审查 |
 |---|---|---|---|---|---|---|
-| **1** | **P1** | sql 域取证基线：11 题 `runtime → static` | **`PASS` 待合并** | ZCode | 产品仓 | [design](design/p1-sql-seed.md) · [二审 PASS](reviews/p1-round2.md) |
+| **1** | **P1** | sql 域取证基线：11 题 `runtime → static` | **`done` 已合并（`dbae762`）** | ZCode | 产品仓 | [design](design/p1-sql-seed.md) · [二审 PASS](reviews/p1-round2.md) |
 | **2** | **P4a** | 清掉两处 ruff F821（**15 分钟**） | `ready` | ZCode | 产品仓 | [任务卡](tasks/p4a-f821.md) |
 | **3** | **P0'** | 清 `cloudagent_sim` 的 `pg_default_acl` 残留（**20 分钟**） | `ready` | ZCode | 只动数据库 | [任务卡](tasks/p0-prime-acl-cleanup.md) |
 | **4** | **P2a** | 开关登记表 + 机制守卫（**产品侧**） | `ready` | ZCode | 产品仓 | [design](design/p2a-switch-registry.md) · [任务卡](tasks/p2a-switch-registry.md) |
@@ -49,10 +49,14 @@
 
 状态词：`ready`（可开工）/ `in_progress` / `in_review` / `changes_requested` / `PASS`（审查通过待合并）/ `done` / `blocked` / `superseded`（作废）。
 
-## 合并前必读
+## 合并状态（2026-11-07）
 
-P1 合并到 `main` 前，先处理本目录下**未提交的文档改动**
-（`docs/collab/**` 有 8 个新文件 + 4 个改动），避免文档混入 P1 的合并提交。
+P1 **已合并**到 `main`（merge commit `dbae762`）。合并前已先把 `docs/collab/**` 的
+文档改动单独提交（`a38a61b` P1 审查/设计更正 + `a709602` 评测体系规划），
+所以 merge commit 里只有 P1 的代码与数据，文档不混入。
+
+`main` 当前 **ahead of origin/main by 11 commits**（未 push）。
+`feat/p1-sql-seed` 分支保留未删，可作历史参照。
 
 ## 派工方式（重要）
 
@@ -82,7 +86,7 @@ C:\Users\Administrator\Desktop\CloudAgent-public   （HEAD 见下，38 题案例
 ## 为什么是这个顺序
 
 1. **P1 排第一**：它不烧模型额度，却把"可核题"从 17 提到 28 —— 所有后续 live 对照的分母。
-   已完成并通过二审，是**待合并**状态。
+   ✅ **已完成并合并**（`dbae762`）。
 2. **P4a / P0' 排第二三**：都是小时级、互不依赖、且**与评测体系无关**——
    `ruff` 现在有 3 个 error 一直红着，数据库有一条隐式默认授权一直生效。
    这类小债不该被"评测体系大工程"阻塞。
