@@ -28,6 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from cloudagent_ext.diagnosis.evaluators import DiagnosisStopContext, build_default_chain
 from cloudagent_ext.diagnosis.models import (
     STATUS_SUCCESS,
     DiagnosisRequest,
@@ -58,6 +59,10 @@ _RESULT_TO_TASK_STATUS: dict[str, str] = {
     "failed": TASK_STATUS_FAILED,
 }
 
+# 默认评估器链（无状态，可安全复用）。构造点见 diagnosis/evaluators.py：
+# 注册序 = 同 tier 内的优先级 = 原 design D4 的判定顺序。
+_DEFAULT_CHAIN = build_default_chain()
+
 
 class DiagnosisSessionError(ValueError):
     """调查会话级错误（预算 / 防重复 / 状态 / 入账校验）。"""
@@ -77,10 +82,15 @@ class SessionBudget:
 
 @dataclass(frozen=True)
 class SessionDecision:
-    """停止决策：``should_continue`` + 机器可读原因。"""
+    """停止决策：``should_continue`` + 机器可读原因 + 归因。
+
+    ``evaluator`` 是**谁做出的这个决定**（评估器名），供统计与调试；由
+    :class:`cloudagent_ext.query.stop_decision.EvaluatorChain` 统一补全。
+    """
 
     should_continue: bool
     reason: str
+    evaluator: str = ""
 
 
 @dataclass(frozen=True)
@@ -247,7 +257,7 @@ class InvestigationSession:
     ) -> SessionDecision:
         """缺口驱动的停止决策（变更 add-gap-driven-orchestration）。
 
-        判定顺序（design D4）：
+        判定顺序（design D4，现由评估器链表达）：
 
         1. 预算耗尽（``total_delegations`` 含非诊断委派；``None`` 退回诊断条目数）
         2. 最近一次委派新增/复述了 open 缺口 → 继续
@@ -257,25 +267,45 @@ class InvestigationSession:
 
         注意：第 3 条的"存在缺口"是**必须**的——空列表上 ``all()`` 真空成立，
         会把"第一次就答对"误判成 ``blocked_only``。
+
+        实现（变更 add-stop-decision-protocol）：上述五条已各自成为一个评估器，
+        由 :func:`cloudagent_ext.diagnosis.evaluators.build_default_chain` 按同一顺序
+        注册、经确定性折叠出唯一决策。``reason`` 与原实现逐字一致（对外契约不变），
+        新增的 :attr:`SessionDecision.evaluator` 给出归因。
         """
 
+        decision = _DEFAULT_CHAIN.evaluate(
+            self._stop_context(total_delegations=total_delegations, gaps=gaps)
+        )
+        if decision is None:
+            # 兜底评估器永不弃权，走到这里说明链的构造被改坏了——宁可报错，
+            # 也不要静默地"继续派发"把一个配置错误变成预算黑洞。
+            raise DiagnosisSessionError("stop evaluator chain produced no decision")
+        return SessionDecision(
+            should_continue=decision.should_continue,
+            reason=decision.reason,
+            evaluator=decision.evaluator,
+        )
+
+    def _stop_context(
+        self,
+        *,
+        total_delegations: int | None,
+        gaps: GapSummary | None,
+    ) -> DiagnosisStopContext:
+        """把会话现状压成决策输入（只读快照）。"""
+
         used = self.delegations_used if total_delegations is None else total_delegations
-        if used >= self.budget.max_delegations:
-            return SessionDecision(should_continue=False, reason="budget_exhausted")
-
-        summary = gaps or GapSummary()
-        if summary.recent_open_ids:
-            return SessionDecision(should_continue=True, reason="gap_open")
-        if summary.only_blocked:
-            return SessionDecision(should_continue=False, reason="blocked_only")
-
         has_success = any(
             entry.result is not None and entry.result.status == STATUS_SUCCESS
             for entry in self._entries
         )
-        if has_success and not summary.recent_open_ids:
-            return SessionDecision(should_continue=False, reason="success_recorded")
-        return SessionDecision(should_continue=True, reason="budget_available")
+        return DiagnosisStopContext(
+            gap_summary=gaps or GapSummary(),
+            delegations_used=used,
+            max_delegations=self.budget.max_delegations,
+            has_success=has_success,
+        )
 
     def _find_pending_entry_index(self, task_id: str | None) -> int:
         if not task_id:

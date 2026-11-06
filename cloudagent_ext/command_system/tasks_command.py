@@ -34,6 +34,29 @@ def _format_task(t: Any) -> str:
     return f"[{status}] {label} (id: {getattr(t, 'id', '')})"
 
 
+#: 视为"卡住"的缺口状态（与 GapSummary.only_blocked / 域闸同一口径）
+GAP_STUCK = frozenset({"blocked", "inconclusive"})
+
+
+def _domain_of(agent_type: str) -> str:
+    """``code-diagnosis`` → ``code``。延迟导入避免命令层反向依赖诊断域。"""
+
+    from cloudagent_ext.diagnosis.domain_gate import domain_of
+
+    return domain_of(agent_type)
+
+
+def _format_gap_line(gap: Any) -> str:
+    """单条缺口的渲染（保持改造前的格式，两种分组共用）。"""
+
+    status = getattr(gap, "status", "?")
+    statement = str(getattr(gap, "statement", "") or "").strip()
+    if len(statement) > 80:
+        statement = statement[:80] + "…"
+    restatements = getattr(gap, "restatements", 0)
+    return f"• [{status}] {statement}（复述 {restatements} 次）"
+
+
 def _format_diagnosis_session(tc: Any) -> list[str]:
     """诊断会话轨迹（change wire-investigation-session）。
 
@@ -66,23 +89,63 @@ def _format_diagnosis_session(tc: Any) -> list[str]:
         lines.append(
             f"缺口（{open_count} open / {blocked_count} blocked 或待定 / {resolved_count} resolved）："
         )
-        for gap in gaps:
-            status = getattr(gap, "status", "?")
-            statement = str(getattr(gap, "statement", "") or "").strip()
-            if len(statement) > 80:
-                statement = statement[:80] + "…"
-            restatements = getattr(gap, "restatements", 0)
-            lines.append(f"• [{status}] {statement}（复述 {restatements} 次）")
+        # 阶段 1：有域归因时按域分组（"人看的视图"与"Agent 用的状态"是同一份数据）。
+        # 全是没有域的历史数据时保持原来的平铺格式，避免给老数据加无意义的"(未归因)"分组。
+        has_domain = any(str(getattr(gap, "source_domain", "") or "") for gap in gaps)
+        if not has_domain:
+            for gap in gaps:
+                lines.append(_format_gap_line(gap))
+        else:
+            grouped: dict[str, list] = {}
+            for gap in gaps:
+                key = _domain_of(getattr(gap, "source_domain", "")) or "(未归因)"
+                grouped.setdefault(key, []).append(gap)
+            for key in sorted(grouped):
+                items = grouped[key]
+                d_open = sum(1 for gap in items if getattr(gap, "status", "") == "open")
+                d_stuck = sum(1 for gap in items if getattr(gap, "status", "") in GAP_STUCK)
+                lines.append(f"  [{key}] {len(items)} 条（{d_open} open / {d_stuck} 卡住）")
+                for gap in items:
+                    lines.append("    " + _format_gap_line(gap))
 
+    # 阶段 1：域闸拦截（与"缺口注入"并列，都是编排行为的事后视图）
     used = getattr(session, "delegations_used", None)
     budget = getattr(session, "budget", None)
     if used is not None and budget is not None:
         lines.append(
             f"已用 {used}/{getattr(budget, 'max_delegations', '?')} 次委派"
         )
+    blocks = getattr(runtime, "domain_blocks", None) or {}
+    if blocks:
+        detail = "、".join(f"{name} {count} 次" for name, count in sorted(blocks.items()))
+        lines.append(f"域闸拦截：{detail}")
     injected = getattr(runtime, "injected_dispatches", 0)
     if injected:
         lines.append(f"缺口注入：{injected} 次（子代理提示含「当前未解决缺口」段）")
+
+    # 阶段 2：状态版本 / 陈旧丢弃 / 独立核查（人看的与 Agent 用的是同一份状态）
+    revision = int(getattr(runtime, "state_revision", 0) or 0)
+    stale = int(getattr(runtime, "stale_discarded", 0) or 0)
+    if revision or stale:
+        lines.append(f"状态版本：v{revision}（陈旧丢弃 {stale} 次）")
+    assessments = getattr(runtime, "assessments", None) or []
+    if assessments:
+        try:
+            from cloudagent_ext.diagnosis.assessor import summarize_assessments
+
+            summary = summarize_assessments(assessments)
+            parts = [
+                f"{name} {count}"
+                for name, count in sorted((summary.get("by_status") or {}).items())
+                if count
+            ]
+            line = f"独立核查：{summary.get('assessments', 0)} 次（{'、'.join(parts)}）"
+            rate = summary.get("disagreement_rate")
+            if rate is not None:
+                line += f"，分歧率 {rate:.0%}"
+            lines.append(line)
+        except Exception:  # noqa: BLE001 — 渲染失败不影响其它行
+            pass
 
     report_method = getattr(session, "conflict_report", None)
     if callable(report_method):

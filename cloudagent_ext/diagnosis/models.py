@@ -470,12 +470,25 @@ class DiagnosisResult:
                     )
                     continue
                 target = raw_target
+                kind = str(rel.get("kind", ""))
                 if target not in known:
+                    # 阶段 4（2026-11-03）：``conflict`` 的语义**天生跨轮**——
+                    # 它说的是"这次的观测和已有证据冲突"，目标通常在上一次委派的结果里，
+                    # 本次结果当然看不到。按"必须引用本次"清洗会把跨轮冲突全部丢掉，
+                    # 于是失效传播的触发源在生产路径上永远是空的。
+                    #
+                    # 放开它不会削弱"防编造"：下游是反查 ``Gap.evidence_refs``，
+                    # 编造的 id 匹配不上任何缺口，最多在冲突报告里多一条噪音。
+                    if kind == "conflict":
+                        warnings.append(
+                            f"{item.evidence_id}: relation: conflict targets external evidence_id {target}"
+                        )
+                        kept.append(rel)
+                        continue
                     warnings.append(
                         f"{item.evidence_id}: relation: references unknown evidence_id {target}"
                     )
                     continue
-                kind = str(rel.get("kind", ""))
                 if kind and kind not in _RELATION_KINDS:
                     warnings.append(
                         f"{item.evidence_id}: relation: unconventional kind {kind!r}"
@@ -611,6 +624,21 @@ class Gap:
     restatements: int = 0
     evidence_refs: list[str] = field(default_factory=list)
     note: str = ""
+    # 阶段 1（域维度）：这条缺口是哪次委派产出的。
+    # 存**原始 agent_type**（如 "code-diagnosis"）而不是短名，便于追溯；
+    # 展示与判定用 ``domain_gate.domain_of()`` 归成 "code"。
+    # 默认空 = 未归因（历史数据/非诊断委派），域闸对空域缺口一律放行。
+    source_domain: str = ""
+    # 阶段 2（B2）：这条 `resolved` 是否过了独立核查。
+    # 注意三态语义：``verified=False`` 既可能是"没核过"也可能是"核了但没过"，
+    # 所以另用 ``verification`` 记一句原因（"unavailable" / "overclaimed: ..." / "ok"）。
+    verified: bool = False
+    verification: str = ""
+    # 阶段 4（C2）：这条缺口被证据推翻过几次（resolved → open）。
+    # 与 ``restatements`` 分开计数：一个是"被再次陈述"，一个是"被推翻"。
+    # 达到上限（GapStore.MAX_REVERTS）后转 inconclusive，放弃自动收敛——
+    # 否则会形成 resolved → 冲突 → open → 再 resolved 的循环，每轮都烧委派预算。
+    revert_count: int = 0
 
     def __post_init__(self) -> None:
         if not isinstance(self.gap_id, str) or not self.gap_id.strip():

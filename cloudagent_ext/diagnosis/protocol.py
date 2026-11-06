@@ -45,7 +45,15 @@ __all__ = [
 
 _RESULT_CONTRACT = """## 输出约定（统一诊断结果协议）
 
-你的最终消息必须在末尾以一个 json 代码块结束；代码块内容为诊断结果的 JSON 对象，其余分析说明写在代码块之前。
+你的最终消息**只能是一个 json 代码块**。
+
+硬性要求（违反会导致本次委派作废、结论不被采纳）：
+
+- **不要**在代码块前后写任何解释、过程叙述、思考记录或"接下来我要…"；
+- **不要**用英文复述思路（例如 "Now let me examine…"）——那是过程，不是结果；
+- 代码块必须是最后一样东西，且必须闭合。
+
+只有代码块会被解析，其余内容一律被丢弃。
 
 ```json
 {"request_id": "<父请求标识>", "task_id": "<任务标识>", "agent_name": "<你的 Agent 名称>", "status": "success|partial|failed", "summary": "<结论摘要>", "findings": [], "evidence": [], "root_causes": [], "recommendations": [], "validation_plan": [], "limitations": [], "next_steps": []}
