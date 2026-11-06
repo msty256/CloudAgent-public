@@ -54,7 +54,11 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 
 -- 幂等重放：清空后重新灌入。单条 TRUNCATE 同时列出两表以满足
--- orders → customers 的外键引用；主键为显式值，不做 RESTART
+-- orders → customers 的外键引用；主键为显式值，不做 RESTART。
+-- 前提：除 orders ↔ customers 彼此之外，目标库没有其它表以 FK 引用这两张表；
+-- 若有（如第三方审计表 REFERENCES orders(id)），本 TRUNCATE 会整体失败——
+-- 这是刻意保留的失败而非 CASCADE（CASCADE 会静默清空别人的表），
+-- 需先手工处理依赖（截断/解除引用）再重放本 seed。
 TRUNCATE orders, customers;
 
 INSERT INTO customers (id, name, region)
@@ -85,7 +89,10 @@ UPDATE orders SET order_no = 'order-' || id WHERE order_no IS NULL;
 ANALYZE customers;
 ANALYZE orders;
 
--- 只读角色授权（角色预先存在；本文件不含凭据）
+-- 只读角色授权（角色预先存在；本文件不含凭据）。
+-- 只授本文件负责的两张表：不用 ALL TABLES IN SCHEMA public——那会把
+-- sync_seed_primary.sql 建的 tenants/devices 一并授出，与文件头「分工边界」
+-- 矛盾；也不用 ALTER DEFAULT PRIVILEGES——那会在 public 留下一条永久
+-- 默认授权（今后任何人建的表都自动对只读角色可读），不归本 seed 管
 GRANT USAGE ON SCHEMA public TO cloudagent_ro;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO cloudagent_ro;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO cloudagent_ro;
+GRANT SELECT ON customers, orders TO cloudagent_ro;

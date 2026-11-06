@@ -14,12 +14,16 @@
 ``verified_against`` 的漂移要等下一次有人配好 DSN 才会被发现。
 本文件兜住"跳过"的下界，守三件事：
 
-1. ``tests/fixtures/sql/seed.sql`` 的四条被断言依赖的显式事实：
+1. ``tests/fixtures/sql/seed.sql`` 的五条被断言依赖的显式事实：
    - ``CREATE INDEX`` 行不出现 orders 的 tenant_id / created_at /
      customer_id / status（sql-001/002/006/008/009 的 index_absent 前提）；
    - 含 ``idx_customers_region`` 的创建（index_present 前提）；
    - 含 ``ANALYZE``（行数估算 / n_distinct 断言依赖统计新鲜）；
-   - 不含明文密码 / DSN。
+   - 不含明文密码 / DSN；
+   - 时间列生成式不得用 ``now()`` / ``current_date`` / ``current_timestamp``
+     ——滚动时间让同一份 seed 在不同日子产出不同分布（P1 规格 §6.1，
+     防 D2 那种"改回滚动时间"的回归；剥掉 ``--`` 注释后再扫，注释里的
+     "由 now() 改为…"是说明文字，不是代码）。
 2. 每道 ``static`` 的 sql 题，其 ``verified_against`` 必须引用 seed 文件路径
    ——static 的定义是"对着仓库内依据核过"，依据不在就名不副实。
 3. 幂等契约：seed 里 ``TRUNCATE`` 的每张表，必须在本文件里有对应的
@@ -70,6 +74,13 @@ def _seed_text() -> str:
     return SEED_PATH.read_text(encoding="utf-8")
 
 
+def _code_lines() -> list[str]:
+    """剥掉 SQL 行注释（``--`` 之后）再匹配——seed 的注释里写着
+    "由 now() 改为固定基准"这类说明文字，直接扫会误报。"""
+
+    return [line.split("--")[0] for line in _seed_text().splitlines()]
+
+
 class TestSeedExplicitFacts:
     """规格 §3-T1.4 第 1 条：seed 文件里的四条显式事实。"""
 
@@ -97,6 +108,18 @@ class TestSeedExplicitFacts:
         text = _seed_text()
         assert "postgresql://" not in text, "seed.sql 不许内嵌 DSN"
         assert not re.search(r"password", text, re.IGNORECASE), "seed.sql 不许内嵌密码"
+
+    def test_no_rolling_time_in_seed(self) -> None:
+        """D2 回归守门：固定基准被改回滚动时间时分布开始漂移，
+        而其它断言全绿看不出来——必须在这里红（规格 §3-T1.4 第 5 条）。"""
+
+        offenders = [
+            line.strip()
+            for line in _code_lines()
+            if re.search(r"\b(now|current_date|current_timestamp)\s*\(", line, re.IGNORECASE)
+            or re.search(r"\bcurrent_date\b", line, re.IGNORECASE)
+        ]
+        assert not offenders, "seed 的时间生成式不得用滚动时间（破坏可复现）：" + repr(offenders)
 
 
 class TestStaticCasesCiteSeed:
