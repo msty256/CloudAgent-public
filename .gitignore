@@ -103,6 +103,9 @@ sessions/
 # CloudAgent personal settings
 CLAUDE.local.md
 /AGENTS.md
+# 例外：AGENTS.md 是双 Agent（DSH 设计/审查 + ZCode 开发）的协作契约，
+# 必须随仓库走版本，否则接手的人看不到目录约定与验收标准。
+!/AGENTS.md
 
 # Local agent runtime artifacts (generated during sessions, not for upstream)
 /AGENT.md
