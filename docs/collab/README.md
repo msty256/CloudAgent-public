@@ -13,10 +13,16 @@
 
 | 序 | 工作包 | 标题 | 状态 | 负责人 | 仓库 | 设计与审查 |
 |---|---|---|---|---|---|---|
-| **1** | **P1** | sql 域取证基线：11 题 `runtime → static` | **`done` 已合并（`dbae762`）** | ZCode | 产品仓 | [design](design/p1-sql-seed.md) · [二审 PASS](reviews/p1-round2.md) |
-| **2** | **P4a** | 清掉两处 ruff F821（**15 分钟**） | `ready` | ZCode | 产品仓 | [任务卡](tasks/p4a-f821.md) |
-| **3** | **P0'** | 清 `cloudagent_sim` 的 `pg_default_acl` 残留（**20 分钟**） | `ready` | ZCode | 只动数据库 | [任务卡](tasks/p0-prime-acl-cleanup.md) |
-| **4** | **P2a** | 开关登记表 + 机制守卫（**产品侧**） | `ready` | ZCode | 产品仓 | [design](design/p2a-switch-registry.md) · [任务卡](tasks/p2a-switch-registry.md) |
+| **1** | **P1** | sql 域取证基线：11 题 `runtime → static` | ✅ **`done` 已合并（`dbae762`）** | ZCode | 产品仓 | [design](design/p1-sql-seed.md) · [二审 PASS](reviews/p1-round2.md) |
+| **2** | **P4a** | 清掉两处 ruff F821 | ✅ **`PASS` 待合并** | ZCode | 产品仓 | [任务卡](tasks/p4a-f821.md) · [批次审查](reviews/batch-2026-11-07-p0p-p4a-p2a-evalp0.md) |
+| **3** | **P0'** | 清 `cloudagent_sim` 的 `pg_default_acl` 残留 | ✅ **`done` 已合并（`2fffe88`）**，数据库已验证 0 行 | ZCode | 只动数据库 | [任务卡](tasks/p0-prime-acl-cleanup.md) · [handoff](handoffs/p0-prime-acl-cleanup.md) |
+| **4** | **P2a** | 开关登记表 + 机制守卫（**产品侧**） | ✅ **`PASS` 待合并**（守卫经破坏性自验） | ZCode | 产品仓 | [design](design/p2a-switch-registry.md) · [任务卡](tasks/p2a-switch-registry.md) |
+| **5** | **P0''** | 清 `cloudagent_sim_downstream` 的同一残留 | `ready`（10 分钟） | ZCode | 只动数据库 | [任务卡](tasks/p0-doubleprime-acl-cleanup.md) |
+
+**待合并的三个分支**（互不冲突，建议顺序 P4a → EVAL-P0 → P2a）：
+`feat/p4a-f821` · `feat/eval-p0-redaction` · `feat/p2a-switch-registry`
+
+详见 [批次审查结论](reviews/batch-2026-11-07-p0p-p4a-p2a-evalp0.md)（含我的破坏性自验记录）。
 
 ### 评测体系（决策已定，按序推进）
 
