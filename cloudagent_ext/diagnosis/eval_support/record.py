@@ -44,9 +44,11 @@ __all__ = [
 #: 本文件实现的 schema 版本
 SCHEMA_VERSION = 1
 
-#: ``outcome.status`` 六档——语义对齐 ``evaluation/scoring``，不另立标准
+#: ``outcome.status`` 五档——语义对齐 ``evaluation/scoring.categorize()``，不另立标准
+#: （原六档里的 ``empty`` 已删除：空输出=没拿到作答机会=链路问题，归 ``unfinished``，
+#: 与 categorize 的既有论证一致；审查 eval-p1a-round1 §2 疑问 2 裁决）
 OUTCOME_STATUSES = frozenset(
-    {"ok", "timeout", "crashed", "empty", "unfinished", "invalid_output"}
+    {"ok", "timeout", "crashed", "unfinished", "invalid_output"}
 )
 
 #: 合法诊断域（与案例库口径一致；硬编码以保持本模块零内部依赖）

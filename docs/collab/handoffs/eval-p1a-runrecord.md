@@ -2,6 +2,23 @@
 
 > ZCode · 2026-11-07 · 分支 `feat/eval-p1a-runrecord`
 
+## 复审修订（2026-11-07，按 eval-p1a-round1 裁决；**停在工作区未提交，等复验**）
+
+一审 PASS 后按裁决做了一件事：**移除 `empty` 档，六档改五档**
+`ok | timeout | crashed | unfinished | invalid_output`（空输出=没拿到作答机会，
+归 `unfinished`，与 `scoring.categorize()` 口径一致）：
+
+- `record.py`：`OUTCOME_STATUSES` 去掉 `"empty"`（注释记录裁决来由）；
+- `execute.py`：`_determine_status()` 空输出分支改返回 `unfinished`；
+  `case_run_to_record()` 的"要子代理结果但没拿到"分支同步改 `unfinished`；
+- 用例同步：六档参数化 → 五档，空输出用例断言 `unfinished`，
+  **新增 `test_rejects_removed_empty_status`**（写 `empty` 必红，防旧口径回流）；
+- 本节之上正文里的"六档/empty"表述按交付时点保留原样（历史记录），以本节为准。
+
+验证：eval_support **65 passed**（五档参数化 -1 + 拒绝用例 +1，净持平）、
+诊断域全量 **926 passed / 24 skipped**、ruff 全绿。**未提交**——按审查 §7 等复验。
+建议项（`# TODO(P2)` 标记）本轮未做，留待合并后与 P2 清单一起处理。
+
 ## 改了什么
 
 | 文件 | 内容 |

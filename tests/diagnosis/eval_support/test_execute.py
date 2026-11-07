@@ -124,7 +124,7 @@ _META = {
 
 
 class TestStatusDetermination:
-    """schema §4.1 判定顺序（P1a 只实现执行层四档）。"""
+    """五档口径（审查裁决：empty 档已删除，空输出归 unfinished）。"""
 
     def test_ok_is_provisional(self) -> None:
         record = _to_record(FakeCaseRun(meta=dict(_META)))
@@ -140,9 +140,12 @@ class TestStatusDetermination:
         record = _to_record(FakeCaseRun(error="RuntimeError: boom", meta=dict(_META)))
         assert record.outcome["status"] == "crashed"
 
-    def test_empty_output(self) -> None:
+    def test_empty_output_is_unfinished(self) -> None:
+        """空输出 = 没拿到作答机会 → unfinished（不是独立的 empty 档）。"""
+
         record = _to_record(FakeCaseRun(raw_output="   ", main_answer="", meta=dict(_META)))
-        assert record.outcome["status"] == "empty"
+        assert record.outcome["status"] == "unfinished"
+        assert "status_provisional" not in record.outcome
 
 
 class TestGradedText:
@@ -152,13 +155,14 @@ class TestGradedText:
         record = _to_record(FakeCaseRun(meta=dict(_META)))  # auto + main + effective=subagent
         assert record.outcome["graded_text"] == '{"root_causes": []}'
 
-    def test_main_mode_without_subagent_payload_is_empty(self) -> None:
-        """main 模式没派发子代理 → graded_text 空串、status 记 empty（§5 明文）。"""
+    def test_main_mode_without_subagent_payload_is_unfinished(self) -> None:
+        """main 模式没派发子代理 → graded_text 空串、status 记 unfinished
+        （空输出=没拿到作答机会；审查裁决后不再有 empty 档）。"""
 
         meta = dict(_META, grade_source="main")
         record = _to_record(FakeCaseRun(meta=meta))
         assert record.outcome["graded_text"] == ""
-        assert record.outcome["status"] == "empty"
+        assert record.outcome["status"] == "unfinished"
         assert "status_provisional" not in record.outcome
 
     def test_explicit_main_grade_takes_prose(self) -> None:

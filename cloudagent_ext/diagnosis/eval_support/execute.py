@@ -156,11 +156,13 @@ def _truncate_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _determine_status(case_run: Any) -> tuple[str, bool]:
-    """schema §4.1 的判定顺序（P1a 只实现执行层四档）。
+    """status 判定（审查 eval-p1a-round1 §2 疑问 2 裁决后的五档口径）。
 
-    ``unfinished`` / ``invalid_output`` 的细分是评分层的事（P3）：
-    本卡对"非空、无错"的输出记 ``ok`` 并打 ``status_provisional``，
-    让 P3 知道这条还没细分过。
+    * 空输出 → ``unfinished``（与 ``scoring.categorize()`` 一致：空输出=
+      没拿到作答机会=链路问题，不是独立的 "empty" 档）；
+    * "撞轮次上限 / 明显截断" 与 "输出不合协议" 的细分是评分层的事（P3）：
+      本卡对"非空、无错"的输出记 ``ok`` 并打 ``status_provisional``，
+      让 P3 知道这条还没细分过。
     """
 
     error = case_run.error
@@ -169,7 +171,7 @@ def _determine_status(case_run: Any) -> tuple[str, bool]:
     if error:
         return "crashed", False
     if not str(case_run.raw_output or "").strip():
-        return "empty", False
+        return "unfinished", False
     return "ok", True
 
 
@@ -195,13 +197,14 @@ def case_run_to_record(
     grade_source = request.options.get("grade_source", "auto")
     if _wants_subagent_grade(dispatch_mode, grade_source):
         # LiveExecutor 在拿到子代理结果时会把 meta.grade_source 记为 "subagent"；
-        # 请求要子代理结果但没拿到（如 main 模式没派发）→ graded_text 留空、status=empty
+        # 请求要子代理结果但没拿到（如 main 模式没派发）→ graded_text 留空、
+        # status 记 unfinished（空输出=没拿到作答机会，与 categorize 口径一致）
         if str(meta.get("grade_source") or "") == "subagent":
             graded_text = raw_output
         else:
             graded_text = ""
             if status == "ok":
-                status, provisional = "empty", False
+                status, provisional = "unfinished", False
     else:
         graded_text = main_answer
 

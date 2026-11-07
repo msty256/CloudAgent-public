@@ -246,11 +246,20 @@ class TestRunRecordRoundTrip:
             record_from_json(payload)
 
     @pytest.mark.parametrize("status", sorted(OUTCOME_STATUSES))
-    def test_all_six_outcome_statuses_accepted(self, status: str) -> None:
+    def test_all_five_outcome_statuses_accepted(self, status: str) -> None:
         payload = _valid_record_payload()
         payload["outcome"]["status"] = status
         record = record_from_json(payload)
         assert record.outcome["status"] == status
+
+    def test_rejects_removed_empty_status(self) -> None:
+        """``empty`` 档已删除（审查裁决：空输出归 unfinished，与 categorize 一致）——
+        写它会红，防止旧口径悄悄回流。"""
+
+        payload = _valid_record_payload()
+        payload["outcome"]["status"] = "empty"
+        with pytest.raises(RunRecordError, match="outcome.status"):
+            record_from_json(payload)
 
     def test_rejects_unknown_outcome_status(self) -> None:
         payload = _valid_record_payload()
