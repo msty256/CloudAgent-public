@@ -358,6 +358,21 @@ def run_cli(argv: list[str] | None = None) -> int:
                 exit_status=rc,
             )
             return rc
+        if token == "eval-run":  # nosec B105
+            # EVAL-P1a：与 doctor 同级的 fast-path（不加载 TUI/REPL）；
+            # 只执行与序列化，评分归评测仓
+            from cloudagent_ext.diagnosis.eval_support.cli import run_eval_run
+
+            rc = run_eval_run(rest_args)
+            _telemetry_record_end(
+                session_id=_telemetry_session_id,
+                command_name="eval-run",
+                mode="non_interactive",
+                success=(rc == 0),
+                duration_s=time.monotonic() - _telemetry_start,
+                exit_status=rc,
+            )
+            return rc
 
         # Load the extensible registry only after the deliberately-light
         # built-in paths above. Registry discovery imports provider and tool
