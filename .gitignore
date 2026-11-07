@@ -107,6 +107,9 @@ CLAUDE.local.md
 # 必须随仓库走版本，否则接手的人看不到目录约定与验收标准。
 !/AGENTS.md
 
+# 协作监视器的运行时状态（每 5 分钟被定时任务改写，属本地状态不入库）
+/docs/collab/.monitor-state.md
+
 # Local agent runtime artifacts (generated during sessions, not for upstream)
 /AGENT.md
 /HEARTBEAT.md
