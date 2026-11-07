@@ -38,6 +38,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
+from cloudagent_ext.diagnosis.switches import SWITCHES
+
 __all__ = [
     "STRATEGY_AGENT_REPORT",
     "STRATEGY_TRANSCRIPT",
@@ -124,21 +126,26 @@ class Assessment:
 
 
 def assessor_strategy() -> str:
-    """核查策略；非法值回退 hybrid 并告警（不在导入时求值）。"""
+    """核查策略；非法值回退 hybrid 并告警（不在导入时求值）。
 
-    raw = os.environ.get(ENV_STRATEGY)
+    env 名与合法值取自 ``switches.SWITCHES["goal_stop_strategy"]``
+    （P2a 起登记表是唯一事实源，本函数保留告警行为）。
+    """
+
+    spec = SWITCHES["goal_stop_strategy"]
+    raw = os.environ.get(spec.env)
     if raw is None or not str(raw).strip():
-        return DEFAULT_STRATEGY
+        return spec.default
     text = str(raw).strip().lower()
-    if text not in STRATEGIES:
+    if text not in spec.modes:
         logger.warning(
             "invalid %s=%r (must be one of %s); falling back to %s",
-            ENV_STRATEGY,
+            spec.env,
             raw,
-            sorted(STRATEGIES),
-            DEFAULT_STRATEGY,
+            sorted(spec.modes),
+            spec.default,
         )
-        return DEFAULT_STRATEGY
+        return spec.default
     return text
 
 

@@ -177,9 +177,13 @@ def gap_injection_enabled() -> bool:
 
     **不在模块导入时求值**：配置/环境注入发生在启动之后，模块级常量会固化成默认值
     （同类问题见 ``runtime_session.default_budget()``）。
+    读取统一走 ``switches`` 登记表——修前这里只认字面量 ``"off"``，
+    写 ``"false"``/``"0"``/``"no"`` 会静默继续注入（对照实验数据全废且无报错）。
     """
 
-    return os.environ.get("CLOUDAGENT_GAP_INJECTION", "on").strip().lower() != "off"
+    from cloudagent_ext.diagnosis.switches import SWITCHES, env_flag
+
+    return env_flag(SWITCHES["gap_injection"].env, True)
 
 
 def _render_gap_items(items: Any, budget: int, *, limits: Any) -> list[str]:
