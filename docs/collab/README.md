@@ -17,9 +17,9 @@
 | **2** | **P4a** | 清掉两处 ruff F821 | ✅ **`done` 已合并** | ZCode | 产品仓 | [任务卡](tasks/p4a-f821.md) · [批次审查](reviews/batch-2026-11-07-p0p-p4a-p2a-evalp0.md) |
 | **3** | **P0'** | 清 `cloudagent_sim` 的 `pg_default_acl` 残留 | ✅ **`done` 已合并（`2fffe88`）**，数据库已验证 0 行 | ZCode | 只动数据库 | [任务卡](tasks/p0-prime-acl-cleanup.md) · [handoff](handoffs/p0-prime-acl-cleanup.md) |
 | **4** | **P2a** | 开关登记表 + 机制守卫（**产品侧**） | ✅ **`done` 已合并**（守卫经破坏性自验） | ZCode | 产品仓 | [design](design/p2a-switch-registry.md) · [任务卡](tasks/p2a-switch-registry.md) |
-| **5** | **P0''** | 清 `cloudagent_sim_downstream` 的同一残留 | `ready`（10 分钟） | ZCode | 只动数据库 | [任务卡](tasks/p0-doubleprime-acl-cleanup.md) |
+| **5** | **P0''** | 清 `cloudagent_sim_downstream` 的同一残留 | ✅ **`done` 已提交 main（`49f726a`）**，数据库已验证 0 行 + 其它库扫描无残留 | ZCode | 只动数据库 | [任务卡](tasks/p0-doubleprime-acl-cleanup.md) · [handoff](handoffs/p0-doubleprime-acl-cleanup.md) |
 
-**四包已全部合并**（P4a / EVAL-P0 / P2a 三分支 + 已合入的 P0'），联合验收通过：
+**五个包全部完成**（P1 / P4a / P0' / P2a / P0''），联合验收通过：
 
 | 项 | 结果 |
 |---|---|
@@ -38,7 +38,7 @@
 | 序 | 工作包 | 标题 | 状态 | 仓库 | 设计 / 任务卡 | 预估 |
 |---|---|---|---|---|---|---|
 | **E0** | **EVAL-P0** | 还清产品→评测反向依赖（`redact_sensitive` 迁 utils） | ✅ **`done` 已合并** | 产品仓 | [任务卡](tasks/eval-p0-redaction.md) · [handoff](handoffs/eval-p0-redaction.md) | 30 min |
-| **E1a** | **EVAL-P1a** | RunRecord 契约 + `eval-run` 子命令 | `ready`（E0 已完成，**可立即开工**） | 产品仓 | [design §3](design/eval-system-design.md) · [任务卡](tasks/eval-p1a-runrecord.md) | 1 天 |
+| **E1a** | **EVAL-P1a** | RunRecord 契约 + `eval-run` 子命令 | **`ready`（下一个开工项）** | 产品仓 | [schema](design/eval-p1a-runrecord-schema.md) · [任务卡](tasks/eval-p1a-runrecord.md) | 1 天 |
 | **E1b** | **EVAL-P1b** | 评测仓骨架 + RunRecord 消费 | `ready`（依赖 E1a） | **评测仓（新建）** | [任务卡](tasks/eval-p1b-repo-skeleton.md) | 1 天 |
 | **E2** | **EVAL-P2** | 等价迁移（历史 run + 38 题 + 删产品评测代码） | `ready`（依赖 E1a/E1b） | 两仓 | [任务卡](tasks/eval-p2-migration.md) | 2 天 |
 | E3 | EVAL-P3 | 修评分口径（别名组 / kind 拆分 / 分层） | 待 E2 | 评测仓 | [design §5](design/eval-system-design.md) | 1 天 |
