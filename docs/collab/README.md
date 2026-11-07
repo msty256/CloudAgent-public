@@ -13,11 +13,15 @@
 
 | 序 | 工作包 | 标题 | 状态 | 负责人 | 仓库 | 设计与审查 |
 |---|---|---|---|---|---|---|
-| **1** | **P1** | sql 域取证基线：11 题 `runtime → static` | ✅ **`done` 已合并（`dbae762`）** | ZCode | 产品仓 | [design](design/p1-sql-seed.md) · [二审 PASS](reviews/p1-round2.md) |
-| **2** | **P4a** | 清掉两处 ruff F821 | ✅ **`done` 已合并** | ZCode | 产品仓 | [任务卡](tasks/p4a-f821.md) · [批次审查](reviews/batch-2026-11-07-p0p-p4a-p2a-evalp0.md) |
-| **3** | **P0'** | 清 `cloudagent_sim` 的 `pg_default_acl` 残留 | ✅ **`done` 已合并（`2fffe88`）**，数据库已验证 0 行 | ZCode | 只动数据库 | [任务卡](tasks/p0-prime-acl-cleanup.md) · [handoff](handoffs/p0-prime-acl-cleanup.md) |
-| **4** | **P2a** | 开关登记表 + 机制守卫（**产品侧**） | ✅ **`done` 已合并**（守卫经破坏性自验） | ZCode | 产品仓 | [design](design/p2a-switch-registry.md) · [任务卡](tasks/p2a-switch-registry.md) |
-| **5** | **P0''** | 清 `cloudagent_sim_downstream` 的同一残留 | ✅ **`done` 已提交 main（`49f726a`）**，数据库已验证 0 行 + 其它库扫描无残留 | ZCode | 只动数据库 | [任务卡](tasks/p0-doubleprime-acl-cleanup.md) · [handoff](handoffs/p0-doubleprime-acl-cleanup.md) |
+| **1** | **P1** | sql 域取证基线：11 题 `runtime → static` | ✅ **`done`** | ZCode | 产品仓 | [design](design/p1-sql-seed.md) · [二审 PASS](reviews/p1-round2.md) |
+| **2** | **P4a** | 清掉两处 ruff F821 | ✅ **`done`** | ZCode | 产品仓 | [任务卡](tasks/p4a-f821.md) · [审查](reviews/p4a-round1.md) |
+| **3** | **P0'** | 清 `cloudagent_sim` 的 `pg_default_acl` 残留 | ✅ **`done`** | ZCode | 只动数据库 | [任务卡](tasks/p0-prime-acl-cleanup.md) · [审查](reviews/p0-prime-round1.md) |
+| **4** | **P2a** | 开关登记表 + 机制守卫（**产品侧**） | ✅ **`done`** | ZCode | 产品仓 | [design](design/p2a-switch-registry.md) · [审查](reviews/p2a-round1.md) |
+| **5** | **P0''** | 清 `cloudagent_sim_downstream` 的同一残留 | ✅ **`done`** | ZCode | 只动数据库 | [任务卡](tasks/p0-doubleprime-acl-cleanup.md) · [审查](reviews/p0-doubleprime-round1.md) |
+
+> **审查文件命名约定**：每个包判定 PASS 后必须有独立文件 `reviews/<task-id>-roundN.md`。
+> 汇总性的 [批次审查](reviews/batch-2026-11-07-p0p-p4a-p2a-evalp0.md) 是补充，**不能替代**。
+> （2026-11-07 曾因只写批次汇总、未写独立文件，导致 ZCode 按约定等待。）
 
 **五个包全部完成**（P1 / P4a / P0' / P2a / P0''），联合验收通过：
 
