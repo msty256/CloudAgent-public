@@ -3,7 +3,7 @@
 | 项 | 值 |
 |---|---|
 | 工作包 | EVAL-P1a |
-| 状态 | `in_review`（完成待审；2026-11-07 ZCode） |
+| 状态 | `done`（2026-11-07 二审 PASS 并合并 b907153） |
 | 负责人 | ZCode |
 | 仓库 | **产品仓** `C:\Users\Administrator\Desktop\CloudAgent-public` |
 | 分支 | `feat/eval-p1a-runrecord` |

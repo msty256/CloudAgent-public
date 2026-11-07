@@ -42,8 +42,8 @@
 | 序 | 工作包 | 标题 | 状态 | 仓库 | 设计 / 任务卡 | 预估 |
 |---|---|---|---|---|---|---|
 | **E0** | **EVAL-P0** | 还清产品→评测反向依赖（`redact_sensitive` 迁 utils） | ✅ **`done` 已合并** | 产品仓 | [任务卡](tasks/eval-p0-redaction.md) · [handoff](handoffs/eval-p0-redaction.md) | 30 min |
-| **E1a** | **EVAL-P1a** | RunRecord 契约 + `eval-run` 子命令 | **`ready`（下一个开工项）** | 产品仓 | [schema](design/eval-p1a-runrecord-schema.md) · [任务卡](tasks/eval-p1a-runrecord.md) | 1 天 |
-| **E1b** | **EVAL-P1b** | 评测仓骨架 + RunRecord 消费 | `ready`（依赖 E1a） | **评测仓（新建）** | [任务卡](tasks/eval-p1b-repo-skeleton.md) | 1 天 |
+| **E1a** | **EVAL-P1a** | RunRecord 契约 + `eval-run` 子命令 | ✅ **`done` 已合并（`b907153`）** | 产品仓 | [schema](design/eval-p1a-runrecord-schema.md) · [任务卡](tasks/eval-p1a-runrecord.md) · [一审](reviews/eval-p1a-round1.md) · [二审](reviews/eval-p1a-round2.md) |
+| **E1b** | **EVAL-P1b** | 评测仓骨架 + RunRecord 消费 | **`ready`（下一个开工项）** | **评测仓（新建）** | [任务卡](tasks/eval-p1b-repo-skeleton.md) | 1 天 |
 | **E2** | **EVAL-P2** | 等价迁移（历史 run + 38 题 + 删产品评测代码） | `ready`（依赖 E1a/E1b） | 两仓 | [任务卡](tasks/eval-p2-migration.md) | 2 天 |
 | E3 | EVAL-P3 | 修评分口径（别名组 / kind 拆分 / 分层） | 待 E2 | 评测仓 | [design §5](design/eval-system-design.md) | 1 天 |
 | E4 | EVAL-P4 | 统计层（Wilson CI / pass^k / 两臂对比） | 待 E2 | 评测仓 | [design §6](design/eval-system-design.md) | 1 天 |

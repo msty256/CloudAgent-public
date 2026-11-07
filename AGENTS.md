@@ -126,9 +126,16 @@ P1 可并行；P2 → P3 必须串行；P4 独立。**任何工作包都不许�
 | PG 数据现状 | `orders` 50000、`customers` 2000、`devices` 50、`tenants` **0（空）**；索引只有 4 个主键 + `idx_customers_region` |
 | PG 凭据 | 本机 `~/.cloudagent/db_sim.env`（**仓库外，绝不复制进仓库**）：RO 密码给只读校验，super 密码给 seed |
 | 日志仿真实体 | `~/.cloudagent/config.json` 的 `CLOUDAGENT_LOG_ROOT` 指向 `C:\Users\Administrator\Desktop\cloudAgent\logs-sim` |
-| 测试基线 | `tests/diagnosis` 828 passed / 24 skipped；`tests/context` 165 passed；`tests/tool_system` 115 passed |
-| ruff 已知残留 | 3 处 F821：`cloudagent_ext/agent/registry.py:159`（`Any` 未导入）、`tests/diagnosis/test_session_wiring.py:685`（`pathlib` 未导入，2 处） |
+| **测试基线（2026-11-07 最新）** | `tests/diagnosis` **926 passed / 24 skipped**；`tests/context` 165；`tests/tool_system` 115 |
+| **ruff** | **全仓 All checks passed**（2026-11-07 P4a 已清零，不许再红） |
+| **反向依赖** | 产品侧 import `diagnosis.evaluation` = **`[]`**（EVAL-P0 已清）；`eval_support/` 是 sanctioned 桥，扫描时豁免 |
 | 模型额度 | **不要尝试 live 评测**（见 `docs/needs-quota.md`）；所有工作包都是离线可完成的 |
+
+> **⚠️ 判定"环境 vs 代码"的教训（2026-11-07 事故）**：
+> `tests/diagnosis` 全量跑时若出现**失败位置漂移**（两次跑红的不是同一条），
+> 先怀疑**环境态**而不是代码。已发生过一次：`pg_stat_user_tables` 累计统计为 0
+> 导致 `n_live_tup` 断言失败，用 `git worktree` 在合并前的 commit 上复现即可证伪。
+> 详见 [`docs/collab/incidents/2026-11-07-pg-stats-empty.md`](docs/collab/incidents/2026-11-07-pg-stats-empty.md)。
 
 ---
 
@@ -138,3 +145,43 @@ P1 可并行；P2 → P3 必须串行；P4 独立。**任何工作包都不许�
 - 不许为了让测试变绿而放宽断言或删用例；确实要改用例必须在 handoff 里单列「为什么这条契约变了」。
 - 不许改 38 题案例库里 `ground_truth` 的语义而不同时更新 `verified_against`。
 - 不许跑真实模型评测来"验证一下"（烧额度，且会污染基线）。
+- **Lead 提交文档前必须确认当前在 `main` 分支**（`git rev-parse --abbrev-ref HEAD`）。
+  已发生 3 次：把文档提交落在 ZCode 的工作分支上，污染监视基线。
+
+---
+
+## 7. 交付节奏（硬规则）
+
+### 7.1 每个包做完，Lead 必须做三件事
+
+判定 PASS 后，缺任一件都会让对等待：
+
+1. 写 `docs/collab/reviews/<task-id>-roundN.md`（**独立文件，批次汇总不算**）
+2. 改任务卡状态（`in_review` → `done`）
+3. 改任务板 `README.md`
+
+> 教训：2026-11-07 曾只写批次汇总、只改任务板，导致 ZCode 按任务卡状态判断，
+> 在 `in_review` 上一直等。
+
+### 7.2 **收尾必须产出「转交提示词」**（本项目所有者的明确要求）
+
+任何一轮工作结束时——无论是 Lead 出审查结论、还是 ZCode 交回改动——
+**必须同时产出一段可直接复制转交给对方的提示词**，包含：
+
+| 要素 | 说明 |
+|---|---|
+| **判定** | `PASS` / `CHANGES_REQUESTED`，一句话 |
+| **对方要做的事** | 逐条编号，带**文件:行号**与**改动内容**，不要只说"按文档改" |
+| **依据** | 为什么这么改（引用设计/审查章节） |
+| **验证命令** | 对方改完应跑什么、期望什么结果 |
+| **边界** | 明确"不要做什么"（避免顺手扩大范围） |
+| **下一步** | 改完之后会发生什么（我复验 / 你合并 / 出下一张卡） |
+
+**为什么要有这条**：本项目由人转达消息（Lead 不直接联系 ZCode）。
+没有转交提示词，人就得到处翻文档拼凑任务，容易漏项、也容易传错版本。
+
+### 7.3 工具手段
+
+- 定时任务（`schedule_create`）用于等对方产出时做低频轮询，
+  **不要高频自旋**；判定规则看 `docs/collab/.monitor-state.md`。
+- 该文件已被 gitignore（每 5 分钟改写，不入库）。
