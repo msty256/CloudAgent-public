@@ -120,7 +120,7 @@ def request_from_json(payload: dict) -> RunRequest:
 
 ```jsonc
 {
-  "status": "ok",                 // ok|timeout|crashed|empty|unfinished|invalid_output
+  "status": "ok",                 // ok|timeout|crashed|unfinished|invalid_output
   "error": null,                  // status != ok 时的原因（已脱敏）
   "raw_output": "...",            // 评分对象文本（子代理协议 JSON 或主代理散文）
   "main_answer": "...",           // main 模式下主 Agent 原文，评分不用但保留
@@ -128,16 +128,26 @@ def request_from_json(payload: dict) -> RunRequest:
 }
 ```
 
-**六档定义**（必须与现有 `evaluation/scoring.categorize()` 语义一致，不要另立标准）：
+**五档定义**（必须与现有 `evaluation/scoring.categorize()` 语义一致，不要另立标准）：
 
 | status | 含义 |
 |---|---|
 | `ok` | 正常跑完且有输出 |
 | `timeout` | 超时 |
-| `crashed` | 执行层异常 |
-| `empty` | 跑完但输出为空 |
-| `unfinished` | 撞轮次上限 / 明显截断（沿用 `_UNFINISHED_SENTINELS` 判定） |
+| `crashed` | 执行层异常（含"服务端返回 500 / 连接断开"这类硬异常） |
+| `unfinished` | **空输出** / 撞轮次上限 / 明显截断（沿用 `_UNFINISHED_SENTINELS` 判定） |
 | `invalid_output` | 有输出但不合协议 |
+
+> **⚠️ 修订记录（2026-11-07，P1a 审查中更正）**
+>
+> 本文初版曾列出**六档**并单列 `empty`（"跑完但输出为空"）。
+> **那是错的**，已移除。理由：现有 `scoring.categorize()` 把空输出归 `unfinished`，
+> 且 `_looks_unfinished()` 的 docstring 已论证过这个分类——
+> **空输出意味着"模型没拿到作答机会"，属链路问题，不是格式问题**。
+> 保留 `empty` 会造成 P3 有两条互斥判定路径。
+>
+> 教训：判定表应当**先从现有实现反推**，而不是凭"执行层事实"想当然地写。
+> 本次由 ZCode 在 handoff 的"规格疑问 2"中指出。
 
 ### 3.4 `trace`（optional）
 
@@ -216,7 +226,7 @@ def request_from_json(payload: dict) -> RunRequest:
 ```
 1. error 非空 且 含 "timeout"  →  timeout
 2. error 非空                  →  crashed
-3. raw_output.strip() == ""    →  empty
+3. raw_output.strip() == ""    →  unfinished      ← 空输出归 unfinished（不是 empty）
 4. 命中 _UNFINISHED_SENTINELS  →  unfinished
 5. 有输出但不合诊断协议        →  invalid_output
 6. 其它                        →  ok
@@ -224,12 +234,15 @@ def request_from_json(payload: dict) -> RunRequest:
 
 **注意**：第 4、5 步的判定逻辑**本卡不实现**——那是评分层的事（P3）。
 本卡只需要：
-- 能确定 `ok` / `timeout` / `crashed` / `empty` 四档（都是执行层事实）
-- 对 `unfinished` / `invalid_output` 暂时**记为 `ok` 并在记录里加
+- 能确定 `ok` / `timeout` / `crashed` / `unfinished`（空输出这一档）四类
+- 对"撞顶 / 不合协议"**暂时记为 `ok` 并在记录里加
   `"status_provisional": true`**，等 P3 的评分器来细分
 
 > 为什么要这样：如果在 P1a 就把协议解析塞进来，等于把评分逻辑混进执行层，
 > 违反红线 1。而 `status_provisional` 标记让 P3 知道"这条还没细分过"。
+>
+> **第 3 步为何归 `unfinished` 而非 `empty`**：见 §3.3 的修订记录。
+> 空输出 = 模型没拿到作答机会 = 链路问题，与"答完了但格式不对"是两回事。
 
 ### 4.2 `mechanism` 的搬运白名单（只搬这些，别的不要）
 
@@ -272,7 +285,10 @@ def _wants_subagent_grade(dispatch_mode: str, grade_source: str) -> bool:
 → **产品算出 `graded_text` 并记录**，评测仓直接用。这样"选谁评分"只有一处实现。
 
 取不到被评对象时（如 `main` 模式但没派发子代理），`graded_text` 写空串，
-`outcome.status` 应为 `empty`。
+`outcome.status` 应为 **`unfinished`**（"没拿到作答机会"，同 §3.3 的判定口径）。
+
+> 这条在 P1a 审查时更正过：初版写的 `empty` 已废弃。实现方（ZCode）按当时写下的
+> `empty` 落地，审查时被它的"规格疑问 2"发现并纠正——**这是我文档的错**。
 
 ---
 

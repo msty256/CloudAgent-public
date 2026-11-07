@@ -97,11 +97,17 @@ def request_from_json(payload: dict) -> RunRequest:
 第 3 条继承 `evaluation/cost.py` 已有纪律（"认不出的 usage 不能静默当 0"）。
 现有 run.json 里已经吃过这个教训——报告里看不出"某臂省了 token"到底是真省了还是没采到。
 
-`outcome.status` 六档，对齐现有 `CaseRun` 语义：
+`outcome.status` **五档**，对齐现有 `CaseRun` / `scoring.categorize()` 语义：
 
 ```
-ok | timeout | crashed | empty | unfinished | invalid_output
+ok | timeout | crashed | unfinished | invalid_output
 ```
+
+> **⚠️ 2026-11-07 审查修正**：初版写的是**六档**（含单列的 `empty`）。
+> 那是错的——现有 `scoring.categorize()` 把空输出归 `unfinished`，
+> 且 `_looks_unfinished()` 的 docstring 已论证过：空输出 = 模型没拿到作答机会 = 链路问题。
+> 保留 `empty` 会让 P3 有两条互斥判定路径。详见
+> [`../reviews/eval-p1a-round1.md`](../reviews/eval-p1a-round1.md) §2 疑问 2。
 
 ### 约束 3：`execute.py` **允许临时复用 `evaluation.executors`**（技术债，P2 还）
 
@@ -190,12 +196,16 @@ python -m pytest tests/diagnosis -q --no-header -p no:cacheprovider
 # 期望：861 passed / 24 skipped（当前 main 基线）
 
 # ③ 反向依赖仍为零（本卡不许引入新的）
+#    ⚠️ 2026-11-07 审查修正：必须豁免 eval_support/ 自身——那是约束 3
+#    明文允许的临时桥（P2 还）。初版命令漏了这个豁免，导致必然误报 execute.py。
 python -c "
 import glob, os
 hits=[]
 for f in glob.glob('cloudagent_ext/**/*.py', recursive=True):
     if '__pycache__' in f: continue
-    if os.path.normpath(f).startswith(os.path.normpath('cloudagent_ext/diagnosis/evaluation')): continue
+    p=os.path.normpath(f)
+    if p.startswith(os.path.normpath('cloudagent_ext/diagnosis/evaluation')): continue   # 评测包自引用
+    if p.startswith(os.path.normpath('cloudagent_ext/diagnosis/eval_support')): continue # sanctioned 桥
     if 'diagnosis.evaluation' in open(f, encoding='utf-8', errors='ignore').read(): hits.append(f)
 print(hits)"   # 期望 []
 
