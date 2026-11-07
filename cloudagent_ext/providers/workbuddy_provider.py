@@ -54,6 +54,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -101,6 +102,10 @@ _REFRESH_SKEW_SECONDS = 300
 
 #: Router ids in ``/v3/config`` that are not selectable models.
 _ROUTER_MODEL_IDS = frozenset({"auto", "default-model"})
+
+#: Pulls the human reset time out of WorkBuddy's usage-limit message, e.g.
+#: ``…将在 2026-11-08 00:47:35 UTC+8 重置…``.
+_USAGE_RESET_RE = re.compile(r"将在\s*(.{4,40}?)\s*重置")
 
 #: Substrings WorkBuddy's gateway treats as a *non-WorkBuddy agent* fingerprint.
 #:
@@ -566,6 +571,33 @@ class WorkBuddyProvider(OpenAICompatibleProvider):
         text = str(exc)
         return "11128" in text or "unapproved channel" in text.lower()
 
+    def _is_usage_limit(self, exc: BaseException) -> bool:
+        """Whether *exc* is WorkBuddy's "usage exceeded, resets later" refusal.
+
+        The gateway answers these with HTTP 429 / business code ``6004`` and a
+        reset time hours away. CloudAgent classifies any 429 as *retryable* and,
+        after the retry budget, swallows the turn — the user sees an empty
+        "success" and no explanation. (Measured: a 429 on ``deepseek-v4.1-flash``
+        produced ``num_turns=0``, ``result=""`` and exit code 0.)
+
+        Retrying is also pointless here: the DSH plugin records the same code as
+        ``soft_rate`` and deliberately keeps it out of its retry set for exactly
+        this reason. So this provider converts it into a plain (non-429) error,
+        which CloudAgent treats as non-retryable and surfaces verbatim.
+        """
+        return "6004" in str(exc)
+
+    def _usage_limit_message(self, exc: BaseException, requested_model: str) -> str:
+        """A message CloudAgent will actually show, deliberately free of "429"."""
+        reset = _USAGE_RESET_RE.search(str(exc))
+        when = f" It resets at {reset.group(1).strip()}." if reset else ""
+        return (
+            f"WorkBuddy usage limit reached for model '{requested_model}' "
+            f"(code 6004).{when} Switch to another model "
+            f"(for example glm-5.3-flash or hy4free) or wait for the reset."
+        )
+
+
     def chat_stream_response(
         self,
         messages,
@@ -611,6 +643,10 @@ class WorkBuddyProvider(OpenAICompatibleProvider):
                     "the prompt; this provider rewrites the fingerprints it knows about "
                     "(see _FINGERPRINT_REWRITES). If this is new, the prompt carries a "
                     "phrase that table does not cover yet — add it there."
+                ) from exc
+            if self._is_usage_limit(exc):
+                raise RuntimeError(
+                    self._usage_limit_message(exc, kwargs.get("model") or self.model or "")
                 ) from exc
             if not self._is_auth_failure(exc) or not self._force_refresh():
                 raise

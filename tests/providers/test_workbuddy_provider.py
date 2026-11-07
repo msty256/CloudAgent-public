@@ -223,6 +223,51 @@ def test_channel_reject_becomes_an_actionable_error():
             provider.chat_stream_response([{"role": "user", "content": "hi"}])
 
 
+def test_usage_limit_6004_becomes_a_visible_non_429_error():
+    """A 6004 must not reach CloudAgent as a 429.
+
+    CloudAgent treats 429 as retryable and, once the budget is exhausted,
+    records the turn as an *API error message* that is deliberately kept out of
+    the visible output — the run then reports success with an empty result.
+    Converting it here is what makes the reset time reach the user.
+    """
+    provider = _provider()
+    gateway_error = RuntimeError(
+        "Error code: 429 - {'code': 6004, 'msg': '您的使用量已超出频率限制，"
+        "将在 2026-11-08 00:47:35 UTC+8 重置，您也可以切换其他模型继续使用。'}"
+    )
+    with mock.patch.object(
+        type(provider).__mro__[1],
+        "chat_stream_response",
+        side_effect=gateway_error,
+    ):
+        with pytest.raises(RuntimeError) as excinfo:
+            provider.chat_stream_response([{"role": "user", "content": "hi"}])
+
+    message = str(excinfo.value)
+    assert "6004" in message
+    assert "2026-11-08 00:47:35" in message, "the reset time must survive"
+    # Load-bearing: these substrings would send it back down CloudAgent's
+    # retryable-429 lane, which is exactly what hides the failure.
+    assert "429" not in message
+    assert "rate_limit" not in message.lower()
+
+
+def test_plain_429_is_left_to_the_host_retry_policy():
+    """Only the usage-limit flavour is converted; ordinary 429s stay retryable."""
+    provider = _provider()
+    transient = RuntimeError("Error code: 429 - too many requests, please slow down")
+    with mock.patch.object(
+        type(provider).__mro__[1],
+        "chat_stream_response",
+        side_effect=transient,
+    ):
+        with pytest.raises(RuntimeError) as excinfo:
+            provider.chat_stream_response([{"role": "user", "content": "hi"}])
+
+    assert "too many requests" in str(excinfo.value)
+
+
 def test_401_triggers_one_forced_refresh_and_retry():
     from cloudagent_ext.providers.base import ChatResponse
 
