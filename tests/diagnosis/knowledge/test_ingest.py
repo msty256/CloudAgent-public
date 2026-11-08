@@ -28,10 +28,26 @@ def test_default_roots_after_dataset_moved_to_eval_repo():
 
 
 def _golden_cases_dir() -> Path | None:
-    """EVAL-P2 后案例数据集归评测仓所有（datasets/golden）；不在本机则跳过。"""
+    """EVAL-P2 后案例数据集归独立评测仓所有（datasets/golden）；不在本机则跳过。
 
-    golden = Path(r"D:\cloudagent-eval\datasets\golden")
-    return golden if golden.is_dir() else None
+    路径通过 ``CLOUDAGENT_EVAL_GOLDEN_DIR`` 注入（或放在同级的 cloudagent-eval
+    检出目录里）——**不在代码里硬编本机绝对路径**，否则测试不可移植。
+    """
+
+    import os
+
+    candidates = []
+    env = os.environ.get("CLOUDAGENT_EVAL_GOLDEN_DIR", "").strip()
+    if env:
+        candidates.append(Path(env))
+    # 常见布局：<parent>/cloudagent-eval/datasets/golden
+    for base in Path(__file__).resolve().parents:
+        candidates.append(base / "cloudagent-eval" / "datasets" / "golden")
+        candidates.append(base / "cloudagent_eval" / "datasets" / "golden")
+    for cand in candidates:
+        if cand.is_dir():
+            return cand
+    return None
 
 
 def test_golden_dataset_chunks_are_filtered_out():
