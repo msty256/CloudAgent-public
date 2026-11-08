@@ -169,12 +169,39 @@ def chunk_doc(path: Path, rel: str) -> list[Chunk]:
     return chunks
 
 
-def build_chunks(cases_dir: Path, docs_dir: Path | None = None) -> list[Chunk]:
-    """从案例目录与文档目录构建去重后的知识块列表（只读）。"""
+#: docs 侧允许清单（EVAL-KB1 一审 B′ 裁决：fail-closed）——
+#: 只有列出的文档进索引；以后新增任何 docs/*.md 默认**不进**，
+#: 要进必须显式加白名单并跑泄漏探针。
+#: 排除掉的：baseline-attempt / case-audit / eval-analysis / needs-quota /
+#: resume-bullets（benchmark 的逐题分析/评分/成本记录，含 case_id 与 GT 对照）。
+_DOCS_INCLUDE: frozenset[str] = frozenset({
+    "installation.md",
+    "faq.md",
+    "usage.md",
+    "architecture.md",
+    "security.md",
+    "diagnosis-redesign.md",
+    "diagnosis-orchestration-refactor.md",
+    "knowledge.md",
+})
+
+#: EVAL-KB1 一审 B′：case_id 泄漏过滤正则——任何 text/source 含案例编号的
+#: chunk（如设计文档直接引用 "code-007 的 gt 写的是…"）整块丢弃
+_CASE_ID_RE = re.compile(r"(sql|code|log|cross|sync)-\d{3}")
+
+
+def build_chunks(cases_dir: Path | None = None, docs_dir: Path | None = None) -> list[Chunk]:
+    """从案例目录与文档目录构建去重后的知识块列表（只读）。
+
+    EVAL-KB1：``cases_dir=None`` 表示**不含案例**（docs-only）——benchmark
+    数据集已迁评测仓，产品知识库默认不摄取案例（P2 一审 Q1 裁决）。
+    既有调用传 Path 的行为不变（向后兼容）。
+    """
 
     chunks: list[Chunk] = []
-    cases_dir = Path(cases_dir)
-    if cases_dir.is_dir():
+    if cases_dir is not None:
+        cases_dir = Path(cases_dir)
+    if cases_dir is not None and cases_dir.is_dir():
         for path in sorted(cases_dir.rglob("*.json")):
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
@@ -187,7 +214,16 @@ def build_chunks(cases_dir: Path, docs_dir: Path | None = None) -> list[Chunk]:
         docs_dir = Path(docs_dir)
         if docs_dir.is_dir():
             for path in sorted(docs_dir.glob("*.md")):
+                if path.name not in _DOCS_INCLUDE:
+                    continue  # fail-closed：未进允许清单的文档默认不入索引
                 chunks.extend(chunk_doc(path, "docs/" + path.name))
+    # EVAL-KB1 一审 B′：chunk 级泄漏过滤——text/source 含 case_id 的块整块丢弃
+    #（设计文档里 "code-007 的 gt 写的是…" 这类直接引用 GT 的段落在此落网）；
+    # 先 chunk_doc 再过滤，过滤后仍走 _dedupe
+    chunks = [
+        chunk for chunk in chunks
+        if not _CASE_ID_RE.search(f"{chunk.source} {chunk.text}")
+    ]
     return _dedupe(chunks)
 
 

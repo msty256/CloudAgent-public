@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 
-from cloudagent_ext.diagnosis.evaluation import report as report_module
 from cloudagent_ext.utils.redaction import redact_payload, redact_sensitive
 
 
@@ -65,11 +64,3 @@ class TestRedactPayload:
     def test_non_string_scalars_pass_through(self) -> None:
         payload = {"n": 42, "f": 1.5, "b": True, "none": None}
         assert redact_payload(payload) == payload
-
-
-class TestReExportCompatibility:
-    def test_report_reexports_same_function_objects(self) -> None:
-        """evaluation.report 必须仍导出同一实现（evaluation/ 内部模块零改动的契约）。"""
-
-        assert report_module.redact_sensitive is redact_sensitive
-        assert report_module.redact_payload is redact_payload

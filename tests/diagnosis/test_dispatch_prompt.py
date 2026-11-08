@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import pytest
 
-from cloudagent_ext.diagnosis.evaluation.executors import (
+from cloudagent_ext.diagnosis.eval_support.execute import (
     _MAIN_DISPATCH_CONSTRAINT,
     build_main_dispatch_prompt,
 )

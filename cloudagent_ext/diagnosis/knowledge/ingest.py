@@ -28,6 +28,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import sys
 import time
 from pathlib import Path
@@ -44,11 +46,31 @@ def repo_root() -> Path:
 
 
 def default_cases_dir() -> Path:
+    """EVAL-P2 后案例数据集归评测仓所有（datasets/golden），本仓内目录已删除。
+
+    安全边界（--cases 必须落在仓库根内）未随数据集迁移放开——跨仓默认值
+    会与该约束冲突，故默认仍指旧路径（已不存在）；未显式传 --cases 时
+    由 CLI 给出可操作的报错，而不是静默指到边界之外。
+    """
+
     return Path(__file__).resolve().parents[1] / "cases"
 
 
 def default_docs_dir() -> Path:
     return repo_root() / "docs"
+
+
+def _index_content_hash(index_path: Path) -> str:
+    """索引内容 hash：chunks 按 chunk_id 排序后对 (chunk_id, source, kind, text) 级联 sha256。"""
+
+    data = json.loads(Path(index_path).read_text(encoding="utf-8"))
+    sha = hashlib.sha256()
+    for chunk in sorted(data.get("chunks", []), key=lambda c: c.get("chunk_id", "")):
+        sha.update(chunk.get("chunk_id", "").encode("utf-8"))
+        sha.update(chunk.get("source", "").encode("utf-8"))
+        sha.update(chunk.get("kind", "").encode("utf-8"))
+        sha.update(chunk.get("text", "").encode("utf-8"))
+    return sha.hexdigest()[:16]
 
 
 def _ensure_within(path: Path, root: Path) -> Path:
@@ -60,7 +82,7 @@ def _ensure_within(path: Path, root: Path) -> Path:
     return resolved
 
 
-def build(*, cases_dir: Path, docs_dir: Path | None, out: Path, dense: bool = True) -> dict[str, Any]:
+def build(*, cases_dir: Path | None, docs_dir: Path | None, out: Path, dense: bool = True) -> dict[str, Any]:
     """构建并落盘索引，返回摘要（不打印）。
 
     ``dense=True`` 时额外生成稠密向量与 FAISS 索引（需要 bge 模型 + faiss）；
@@ -68,7 +90,10 @@ def build(*, cases_dir: Path, docs_dir: Path | None, out: Path, dense: bool = Tr
     """
 
     started = time.perf_counter()
-    chunks = build_chunks(Path(cases_dir), Path(docs_dir) if docs_dir else None)
+    chunks = build_chunks(
+        Path(cases_dir) if cases_dir else None,
+        Path(docs_dir) if docs_dir else None,
+    )
     embedder = None
     dense_store = None
     if dense:
@@ -103,7 +128,13 @@ def main(argv: list[str] | None = None) -> int:
         prog="python -m cloudagent_ext.diagnosis.knowledge.ingest",
         description="Build the CloudAgent diagnosis knowledge index (read-only sources).",
     )
-    parser.add_argument("--cases", default=None, help="案例目录（默认 cloudagent_ext/diagnosis/cases）")
+    parser.add_argument(
+        "--cases",
+        default=None,
+        help="案例目录；传 none 表示不含案例（docs-only）。不传时默认 docs-only。"
+             "⚠️ benchmark 数据集不在本仓（EVAL-P2 迁至评测仓），禁止用 --cases 指向评测仓 golden",
+    )
+
     parser.add_argument("--docs", default=None, help="文档目录（默认 <repo>/docs；传 none 表示不含文档）")
     parser.add_argument("--out", default=None, help="索引输出路径（默认见 retriever.index_path()）")
     parser.add_argument(
@@ -121,24 +152,34 @@ def main(argv: list[str] | None = None) -> int:
     root = repo_root()
     try:
         docs_disabled = args.docs is not None and str(args.docs).strip().lower() == "none"
-        cases_dir = Path(args.cases) if args.cases else default_cases_dir()
+        cases_disabled = args.cases is not None and str(args.cases).strip().lower() == "none"
+        # EVAL-KB1：默认 docs-only（不找默认案例目录）——benchmark 数据集不在本仓；
+        # 显式 --cases <dir> 仍受仓库根守卫；--cases none 与默认等价（显式写法）。
+        cases_dir = None
+        if args.cases and not cases_disabled:
+            cases_dir = Path(args.cases)
+            if not cases_dir.is_dir():
+                raise ValueError(f"cases directory not found: {cases_dir}")
+            if not args.allow_outside_root:
+                cases_dir = _ensure_within(cases_dir, root)
         docs_dir = None if docs_disabled else (Path(args.docs) if args.docs else default_docs_dir())
-        if not args.allow_outside_root:
-            cases_dir = _ensure_within(cases_dir, root)
-            if docs_dir is not None:
-                docs_dir = _ensure_within(docs_dir, root)
-        if not Path(cases_dir).is_dir():
-            raise ValueError(f"cases directory not found: {cases_dir}")
+        if not args.allow_outside_root and docs_dir is not None:
+            docs_dir = _ensure_within(docs_dir, root)
         out = Path(args.out) if args.out else retriever.index_path()
     except ValueError as exc:
         print(f"ingest: {exc}", file=sys.stderr)
         return 2
 
-    summary = build(cases_dir=Path(cases_dir), docs_dir=docs_dir, out=out, dense=not args.sparse_only)
+    summary = build(cases_dir=cases_dir, docs_dir=docs_dir, out=out, dense=not args.sparse_only)
+
+    # K1.4：索引内容 hash（对 chunks 排序后 sha256）——P8 的 R7 版本化用
+    index_hash = _index_content_hash(out)
+
     print(
         "ingest: {chunks} chunks ({cases} cases + {docs} docs) -> {index} "
         "({bytes} bytes, {elapsed_ms} ms) | vectors={vectors} backend={backend}".format(**summary)
     )
+    print(f"ingest: chunk_count={summary['chunks']} index_content_hash={index_hash}")
     return 0
 
 

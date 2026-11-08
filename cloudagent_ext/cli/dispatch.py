@@ -373,6 +373,21 @@ def run_cli(argv: list[str] | None = None) -> int:
                 exit_status=rc,
             )
             return rc
+        if token == "kb-query":  # nosec B105
+            # EVAL-P8 T8.1：与 eval-run 同级的 fast-path（只读、不调模型）；
+            # stdout=单行 JSON 契约（设计 eval-p8-rag.md §4），评分归评测仓
+            from cloudagent_ext.diagnosis.knowledge.cli_kb_query import run_kb_query
+
+            rc = run_kb_query(rest_args)
+            _telemetry_record_end(
+                session_id=_telemetry_session_id,
+                command_name="kb-query",
+                mode="non_interactive",
+                success=(rc == 0),
+                duration_s=time.monotonic() - _telemetry_start,
+                exit_status=rc,
+            )
+            return rc
 
         # Load the extensible registry only after the deliberately-light
         # built-in paths above. Registry discovery imports provider and tool

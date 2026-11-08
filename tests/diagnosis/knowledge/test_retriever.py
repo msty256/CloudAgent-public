@@ -35,8 +35,8 @@ def _write_case(root, case_id: str, domain: str, question: str, cause: str) -> N
 @pytest.fixture()
 def index_file(tmp_path):
     root = tmp_path / "cases"
-    _write_case(root, "sync-001", "sync", "orders 上游 50000 行、下游 0 行，确认是否真的没落库", "未落库")
-    _write_case(root, "sql-001", "sql", "这条查询走了全表扫描，索引为什么没命中", "关联列类型不一致")
+    _write_case(root, "demo-a", "sync", "orders 上游 50000 行、下游 0 行，确认是否真的没落库", "未落库")
+    _write_case(root, "demo-b", "sql", "这条查询走了全表扫描，索引为什么没命中", "关联列类型不一致")
     docs = tmp_path / "docs"
     docs.mkdir()
     (docs / "security.md").write_text("# 安全模型\n\n只读三重防线：只读事务、SQL 白名单、只读账号。\n", encoding="utf-8")

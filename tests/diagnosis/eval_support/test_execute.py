@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -45,13 +46,30 @@ def request_of(dispatch_mode: str = "main", grade_source: str = "auto") -> RunRe
     )
 
 
+#: P7c.1：能通过协议解析的最小合法 payload（FakeCaseRun 默认 raw_output 用它——
+#: 状态诚实化后，非空且解析失败会记 invalid_output，测试替身必须与现实一致）
+_VALID_PROTOCOL_PAYLOAD = {
+    "request_id": "req-0001",
+    "agent_name": "sql-diagnosis",
+    "status": "success",
+    "summary": "诊断结论摘要",
+    "findings": [],
+    "evidence": [],
+    "root_causes": [],
+    "recommendations": [],
+    "validation_plan": [],
+    "limitations": [],
+    "next_steps": [],
+}
+
+
 @dataclass
 class FakeCaseRun:
     """只带映射表用到的字段（CaseRun 的测试替身）。"""
 
     case_id: str = "sql-001"
     source: str = "live"
-    raw_output: str = '{"root_causes": []}'
+    raw_output: str = json.dumps(_VALID_PROTOCOL_PAYLOAD, ensure_ascii=False)
     events: list = field(default_factory=list)
     meta: dict = field(default_factory=dict)
     error: str | None = None
@@ -93,6 +111,9 @@ _META = {
     "model": "fake-model",
     "elapsed_sec": 12.5,
     "model_calls": 3,
+    "tool_calls": 5,
+    "main_tool_calls": 2,
+    "sub_tool_calls": 3,
     "delegations": 2,
     "agents_dispatched": ["sql-diagnosis"],
     "gaps_total": 5,
@@ -152,8 +173,9 @@ class TestGradedText:
     """schema §5：选谁评分只有这一处实现。"""
 
     def test_main_mode_auto_takes_subagent_payload(self) -> None:
-        record = _to_record(FakeCaseRun(meta=dict(_META)))  # auto + main + effective=subagent
-        assert record.outcome["graded_text"] == '{"root_causes": []}'
+        case_run = FakeCaseRun(meta=dict(_META))  # auto + main + effective=subagent
+        record = _to_record(case_run)
+        assert record.outcome["graded_text"] == case_run.raw_output  # 评分对象=子代理 payload
 
     def test_main_mode_without_subagent_payload_is_unfinished(self) -> None:
         """main 模式没派发子代理 → graded_text 空串、status 记 unfinished
@@ -195,14 +217,24 @@ class TestMechanismWhitelist:
         assert mechanism["state_revision"] == 0
 
     def test_non_whitelisted_keys_excluded(self) -> None:
-        """白名单而非黑名单：meta 新增的调试字段不进契约。"""
+        """白名单而非黑名单：meta 新增的调试字段不进契约。
+
+        P3-T3.3（schema §8.2 裁决）把 dispatch_incomplete / terminal /
+        tool_calls / main_tool_calls / sub_tool_calls 纳入白名单——它们是
+        P3 细分 unfinished/invalid_output 与判"撞顶"的必要观测；
+        tools_resolved / grade_source 仍是纯调试字段，不进契约。
+        """
 
         record = _to_record(FakeCaseRun(meta=dict(_META)))
         mechanism = record.mechanism or {}
         assert "tools_resolved" not in mechanism
-        assert "terminal" not in mechanism
-        assert "dispatch_incomplete" not in mechanism
         assert "grade_source" not in mechanism
+        # 新纳入的三/五个键必须在
+        assert mechanism["terminal"] == "completed"
+        assert mechanism["dispatch_incomplete"] is False
+        assert mechanism["tool_calls"] == 5
+        assert mechanism["main_tool_calls"] == 2
+        assert mechanism["sub_tool_calls"] == 3
 
     def test_error_is_redacted(self) -> None:
         dsn = "postgresql://user:secret@host:5433/db"
@@ -286,3 +318,232 @@ class TestSubjectArmEnv:
         assert subject["arm_env"] == {"CLOUDAGENT_GAP_INJECTION": "off"}
         assert subject["dispatch_mode"] == "main"
         assert subject["permission_mode"] == "dontAsk"
+
+
+# ---------------------------------------------------------------------------
+# P2-T2.0：last_subagent_payload 按 domain 选期望 agent（schema §9 第 2 条实测修正）
+# ---------------------------------------------------------------------------
+
+
+def _entry(agent_type: str, summary: str):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        task=SimpleNamespace(agent_type=agent_type),
+        result=SimpleNamespace(to_dict=lambda s=summary: {"summary": s, "agent_name": agent_type}),
+    )
+
+
+def _runtime_with(*entries):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(session=SimpleNamespace(entries=list(entries)))
+
+
+class TestLastSubagentPayloadByDomain:
+    def test_expected_domain_agent_is_selected_over_later_foreign_one(self) -> None:
+        """多子代理：外域结果在最后也不能取——旧实现取"最后一个"正是这里的 bug
+        （实测 sql-002 的评分文本来自 code-diagnosis，schema §9 第 2 条）。"""
+
+        runtime = _runtime_with(
+            _entry("sql-diagnosis", "SQL 结论"),
+            _entry("code-diagnosis", "code 结论"),
+        )
+        from cloudagent_ext.diagnosis.eval_support.execute import last_subagent_payload
+
+        payload = last_subagent_payload(runtime, domain="sql")
+        assert json.loads(payload)["agent_name"] == "sql-diagnosis"
+
+    def test_expected_agent_absent_returns_empty_not_other_domain(self) -> None:
+        """期望 agent 无结果 → 空串（调用方回退主回答），**不许退回别的域**。"""
+
+        runtime = _runtime_with(_entry("code-diagnosis", "code 结论"))
+        from cloudagent_ext.diagnosis.eval_support.execute import last_subagent_payload
+
+        assert last_subagent_payload(runtime, domain="sql") == ""
+
+    def test_no_subagent_results_returns_empty(self) -> None:
+        from types import SimpleNamespace
+
+        from cloudagent_ext.diagnosis.eval_support.execute import last_subagent_payload
+
+        assert last_subagent_payload(_runtime_with(), domain="sql") == ""
+        assert last_subagent_payload(SimpleNamespace(session=SimpleNamespace(entries=[])), domain="sql") == ""
+        assert last_subagent_payload(None, domain="sql") == ""
+
+    def test_empty_domain_keeps_legacy_last_any_behavior(self) -> None:
+        """domain 为空 → 不过滤（旧行为），test_grade_source.py 的既有语义不破。"""
+
+        runtime = _runtime_with(
+            _entry("sql-diagnosis", "先"),
+            _entry("code-diagnosis", "后"),
+        )
+        from cloudagent_ext.diagnosis.eval_support.execute import last_subagent_payload
+
+        assert json.loads(last_subagent_payload(runtime))["summary"] == "后"
+
+
+class TestLiveCaseRunnerMetaShape:
+    """自 context/test_compaction_observability.py 迁入（T2.4，管线删除后改用假 provider
+    直接驱动真引擎）：离线形态的 meta 必须带 compaction/recall 三个键（形状稳定）。"""
+
+    def test_offline_style_meta_has_compaction_fields(self, monkeypatch) -> None:
+        from types import SimpleNamespace
+
+        from cloudagent_ext.diagnosis.eval_support.execute import LiveCaseRunner
+
+        protocol_json = json.dumps({
+            "request_id": "req-1", "agent_name": "sql-diagnosis", "status": "success",
+            "summary": "s", "findings": [], "evidence": [], "root_causes": [],
+            "recommendations": [], "validation_plan": [], "limitations": [], "next_steps": [],
+        }, ensure_ascii=False)
+
+        class FakeProvider:
+            model = "fake"
+
+            def chat(self, messages, tools=None, **kwargs):
+                return SimpleNamespace(
+                    model="fake", usage=None, finish_reason="stop",
+                    tool_uses=[], content=protocol_json,
+                )
+
+            def chat_stream(self, messages, tools=None, **kwargs):
+                return iter(())
+
+            def chat_stream_response(self, *args, **kwargs):
+                raise NotImplementedError
+
+        monkeypatch.setenv("CLOUDAGENT_PROVIDER", "fake")
+        runner = LiveCaseRunner(provider_factory=FakeProvider, dispatch_mode="direct")
+        case = {
+            "case_id": "sync-001", "domain": "sync",
+            "input": {"question": "q", "context": {}},
+        }
+        run = runner.run_case(case)
+        for key in ("compaction", "recall_count", "recall_miss"):
+            assert key in run.meta, f"meta 缺 {key}"
+        assert run.meta["recall_count"] == 0
+
+
+class TestStatusHonesty:
+    """P7c.1：状态诚实化——解析失败记 invalid_output，不再冒充 ok。
+
+    复现口径 = breadth 2026-11-08 实测（43 例 9 例 invalid 而产品记 ok）：
+    direct 模式 + 完整诊断 payload，唯一毛病是 task_id 空串。
+    """
+
+    def _direct_record(self, raw_output: str):
+        return _to_record(
+            FakeCaseRun(raw_output=raw_output),
+            request_of(dispatch_mode="direct"),
+        )
+
+    def test_empty_task_id_marks_invalid_output(self) -> None:
+        """卡面单测 1：task_id 空串 → status=invalid_output 且 error 含 task_id。"""
+
+        payload = dict(_VALID_PROTOCOL_PAYLOAD, task_id="")
+        record = self._direct_record(json.dumps(payload, ensure_ascii=False))
+        assert record.outcome["status"] == "invalid_output"
+        assert "task_id" in str(record.outcome["error"])
+
+    def test_omitted_task_id_stays_ok(self) -> None:
+        """卡面单测 2（正例防误杀）：省略 task_id（协议允许）→ status=ok。"""
+
+        payload = {k: v for k, v in _VALID_PROTOCOL_PAYLOAD.items() if k != "task_id"}
+        record = self._direct_record(json.dumps(payload, ensure_ascii=False))
+        assert record.outcome["status"] == "ok"
+
+    def test_filled_task_id_stays_ok(self) -> None:
+        """卡面单测 3（原路径不回归）：task_id 正常回填 → status=ok。"""
+
+        payload = dict(_VALID_PROTOCOL_PAYLOAD, task_id="task-123")
+        record = self._direct_record(json.dumps(payload, ensure_ascii=False))
+        assert record.outcome["status"] == "ok"
+
+    def test_invalid_record_keeps_raw_output(self) -> None:
+        """卡面单测 4：invalid 记录必须保留 raw_output（诊断内容别丢）。"""
+
+        payload = dict(_VALID_PROTOCOL_PAYLOAD, task_id="")
+        raw = json.dumps(payload, ensure_ascii=False)
+        record = self._direct_record(raw)
+        assert record.outcome["status"] == "invalid_output"
+        assert len(record.outcome["raw_output"]) > 0
+        assert record.outcome["raw_output"] == raw
+
+    def test_main_mode_subagent_payload_still_ok(self) -> None:
+        """main 模式（fidelity 主路径）不回归：合法子代理 payload 仍 ok。"""
+
+        record = _to_record(
+            FakeCaseRun(raw_output=json.dumps(_VALID_PROTOCOL_PAYLOAD, ensure_ascii=False),
+                        meta={"grade_source": "subagent"}),
+            request_of(dispatch_mode="main"),
+        )
+        assert record.outcome["status"] == "ok"
+
+    def test_prose_raw_output_now_invalid(self) -> None:
+        """反向条件：散文输出（非协议 JSON）也如实记 invalid_output——
+        与评测仓对 raw_output 的解析口径一致，不是只针对 task_id。"""
+
+        record = self._direct_record("这是一段散文结论，没有协议 JSON。")
+        assert record.outcome["status"] == "invalid_output"
+        assert "协议解析失败" in str(record.outcome["error"])
+
+
+class TestKnowledgeProvisioning:
+    """P8-B4：eval-run 装配必须走 knowledge-aware 路径（本次 3.46M 无效真跑的防线）。
+
+    事故：2026-11-08 L3 KB=on/off 两臂真跑，两臂 search_knowledge 调用数都是 0——
+    execute.py 直接调 register_sql_diagnosis_tools，只装域工具，不装知识库检索。
+    生产路径（agent/_bundled_agents/*.py 的 provision_tools）走的是
+    provision_with_knowledge，eval-run 必须一致，否则 KB 开关是死的。
+    """
+
+    @staticmethod
+    def _agent_tool_names(monkeypatch, kb: str) -> list[str]:
+        """复用生产装配链（与 execute.py 的 _configure_executor 同一组调用）。"""
+
+        from cloudagent_ext.agent import ensure_bundled_agents_registered
+        from cloudagent_ext.agent._bundled_agents import sql_diagnosis
+        from cloudagent_ext.agent.agent_tool_utils import resolve_agent_tools
+        from cloudagent_ext.agent.registry import AgentRegistry
+        from cloudagent_ext.diagnosis.knowledge.provision import provision_with_knowledge
+        from cloudagent_ext.tool_system.defaults import build_default_registry
+
+        monkeypatch.setenv("CLOUDAGENT_KB_ENABLED", kb)
+        ensure_bundled_agents_registered()
+        registry = build_default_registry(provider=None, load_agent_tools=False)
+        assert provision_with_knowledge(sql_diagnosis.register_sql_diagnosis_tools, registry)
+        agent_def = AgentRegistry.find("sql-diagnosis")
+        resolved = resolve_agent_tools(agent_def, registry.list_tools(), is_async=False)
+        return [tool.name for tool in resolved.resolved_tools]
+
+    def test_kb_enabled_registers_search_knowledge(self, monkeypatch) -> None:
+        """KB=on → 子代理工具集含 search_knowledge（本次事故的直接断言）。"""
+
+        names = self._agent_tool_names(monkeypatch, "on")
+        assert "search_knowledge" in names, (
+            "KB=on 时子代理没拿到 search_knowledge —— eval-run 装配走了非 knowledge-aware 路径"
+        )
+
+    def test_kb_disabled_does_not_register(self, monkeypatch) -> None:
+        """反向条件：KB=off → 不含（否则开关是死的，两臂对照无意义）。"""
+
+        names = self._agent_tool_names(monkeypatch, "off")
+        assert "search_knowledge" not in names
+
+    def test_main_mode_agent_excludes_search_knowledge(self, monkeypatch) -> None:
+        """main 模式主 Agent 只派发，不该拿到 search_knowledge（能力归子代理）。"""
+
+        from cloudagent_ext.agent._bundled_agents import sql_diagnosis
+        from cloudagent_ext.diagnosis.knowledge.provision import provision_with_knowledge
+        from cloudagent_ext.tool_system.defaults import build_default_registry
+
+        monkeypatch.setenv("CLOUDAGENT_KB_ENABLED", "on")
+        registry = build_default_registry(provider=None, load_agent_tools=True)
+        assert provision_with_knowledge(sql_diagnosis.register_sql_diagnosis_tools, registry)
+
+        allowed = {"Agent", "Read", "Grep", "Glob", "Skill", "TodoWrite"}
+        main_tools = [t.name for t in registry.list_tools() if t.name in allowed]
+        assert "search_knowledge" not in main_tools
+        # 但 registry 里必须有（子代理用）
+        assert registry.get("search_knowledge") is not None

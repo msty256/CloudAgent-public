@@ -12,21 +12,43 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from cloudagent_ext.diagnosis.knowledge import ingest
 from cloudagent_ext.diagnosis.knowledge.store import KnowledgeIndex, build_chunks
 
 
-def test_default_roots_live_inside_repo():
-    assert ingest.default_cases_dir().is_dir()
+def test_default_roots_after_dataset_moved_to_eval_repo():
+    """EVAL-P2 后：案例数据集归评测仓（本仓内默认目录已删，须显式 --cases）；
+    docs 默认目录仍在仓内，安全边界（根内约束）不变。"""
+
+    assert not ingest.default_cases_dir().is_dir()
     assert ingest.default_docs_dir().is_dir()
     assert ingest.repo_root() == ingest.default_docs_dir().parent
 
 
-def test_repo_cases_build_to_38_case_sources():
-    chunks = build_chunks(ingest.default_cases_dir(), None)
-    sources = {chunk.source for chunk in chunks if chunk.kind == "case"}
-    assert len(sources) == 38, f"expected 38 case sources, got {len(sources)}"
+def _golden_cases_dir() -> Path | None:
+    """EVAL-P2 后案例数据集归评测仓所有（datasets/golden）；不在本机则跳过。"""
+
+    golden = Path(r"D:\cloudagent-eval\datasets\golden")
+    return golden if golden.is_dir() else None
+
+
+def test_golden_dataset_chunks_are_filtered_out():
+    """EVAL-KB1 一审 B′：真实 golden 数据喂进 build_chunks → case chunk 全部被
+    chunk 级过滤器丢弃（0 存活）。这是"产品 KB 不吃 benchmark"的数据侧实测；
+    38 题计数口径已由评测仓 dataset_audit 负责，本测试只守泄漏面。"""
+
+    golden = _golden_cases_dir()
+    if golden is None:
+        import pytest
+
+        pytest.skip("评测仓数据集不在本机")
+    chunks = build_chunks(golden, None)
+    case_chunks = [c for c in chunks if c.kind == "case"]
+    assert case_chunks == [], (
+        f"golden 数据 {len(case_chunks)} 个 case chunk 存活——chunk 级过滤失效"
+    )
 
 
 def test_cli_rejects_outside_root_path(tmp_path, capsys):
@@ -42,13 +64,13 @@ def test_cli_can_build_with_allow_outside_root(tmp_path, capsys):
     cases = tmp_path / "cases"
     cases.mkdir()
     payload = {
-        "case_id": "sync-777",
+        "case_id": "demo-777",
         "domain": "sync",
         "scenario": "demo",
         "input": {"question": "上游有数据下游没有"},
         "ground_truth": {"root_causes": [{"description": "未落库"}]},
     }
-    (cases / "sync-777.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    (cases / "demo-777.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     docs = tmp_path / "docs"
     docs.mkdir()
     (docs / "faq.md").write_text("# FAQ\n\nMySQL 暂不支持。\n", encoding="utf-8")

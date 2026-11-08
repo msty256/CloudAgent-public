@@ -21,7 +21,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from cloudagent_ext.diagnosis.case_library import load_case  # noqa: F401  (确保包可导入)
 from cloudagent_ext.diagnosis.models import (
     DiagnosisRequest,
     DiagnosisResult,

@@ -42,10 +42,10 @@ def _case_payload(case_id: str, domain: str, scenario: str, question: str, cause
 def cases_dir(tmp_path):
     root = tmp_path / "cases" / "sync"
     root.mkdir(parents=True)
-    (root / "sync-001.json").write_text(
+    (root / "demo-a.json").write_text(
         json.dumps(
             _case_payload(
-                "sync-001",
+                "demo-a",
                 "sync",
                 "upstream_has_downstream_missing",
                 "orders 上游 50000 行、下游 0 行，确认是否真的没落库",
@@ -57,10 +57,10 @@ def cases_dir(tmp_path):
     )
     sql_root = tmp_path / "cases" / "sql"
     sql_root.mkdir(parents=True)
-    (sql_root / "sql-001.json").write_text(
+    (sql_root / "demo-b.json").write_text(
         json.dumps(
             _case_payload(
-                "sql-001",
+                "demo-b",
                 "sql",
                 "index_not_used",
                 "这条查询走了全表扫描，索引为什么没命中",
@@ -158,7 +158,7 @@ def test_bm25_finds_exact_identifier(cases_dir, docs_dir):
     index = KnowledgeIndex(build_chunks(cases_dir, docs_dir))
     hits = index.search_bm25("orders 50000", top_k=3)
     assert hits
-    assert index.chunks[hits[0][1]].source.endswith("sync-001.json")
+    assert index.chunks[hits[0][1]].source.endswith("demo-a.json")
 
 
 def test_vector_and_hybrid_return_results(cases_dir, docs_dir):

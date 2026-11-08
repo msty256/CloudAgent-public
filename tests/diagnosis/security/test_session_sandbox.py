@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from cloudagent_ext.diagnosis.evaluation.executors import build_diagnosis_tool_context
+from cloudagent_ext.diagnosis.eval_support.execute import build_diagnosis_tool_context
 from cloudagent_ext.tool_system.defaults import build_default_registry
 from cloudagent_ext.tool_system.protocol import ToolCall
 
@@ -37,7 +37,7 @@ def _dispatch(context, name: str, tool_input: dict):
 
 
 def _restricted_registry(allowed_names: list[str]):
-    from cloudagent_ext.diagnosis.evaluation.executors import _build_restricted_registry
+    from cloudagent_ext.diagnosis.eval_support.execute import _build_restricted_registry
 
     return _build_restricted_registry(
         build_default_registry(load_agent_tools=False), allowed_names
@@ -105,9 +105,9 @@ class TestLiveExecutorWiring:
             raise NotImplementedError
 
     def test_live_executor_registry_restricted_to_allowlist(self) -> None:
-        from cloudagent_ext.diagnosis.evaluation.executors import LiveExecutor
+        from cloudagent_ext.diagnosis.eval_support.execute import LiveCaseRunner
 
-        executor = LiveExecutor(provider_factory=lambda: self._NoopProvider())
+        executor = LiveCaseRunner(provider_factory=lambda: self._NoopProvider())
         executor.prepare()
         registry = executor._registry
         # 白名单内工具可达
@@ -146,7 +146,7 @@ class TestToolAuthorizationBoundary:
         # 拒绝）。现在先装配、再经真实权限判定 dispatch：
         # 无 DSN → 结构化连接错误；有 DSN → 正常结果——两者都不得是权限拒绝。
         from cloudagent_ext.diagnosis.db.tools import register_sql_db_tools
-        from cloudagent_ext.diagnosis.evaluation.executors import _build_restricted_registry
+        from cloudagent_ext.diagnosis.eval_support.execute import _build_restricted_registry
         from cloudagent_ext.tool_system.defaults import build_default_registry
 
         full = build_default_registry(load_agent_tools=False)

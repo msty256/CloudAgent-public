@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from cloudagent_ext.diagnosis.evaluation.report import redact_sensitive
+from cloudagent_ext.utils.redaction import redact_sensitive
 from cloudagent_ext.diagnosis.log.fixtures.sim_logs import (
     TRACE_FULL,
     TRACE_MISSING,

@@ -22,9 +22,7 @@ from types import SimpleNamespace
 import pytest
 
 from cloudagent_ext.agent._bundled_agents.sql_diagnosis import _augment_diagnosis_result
-from cloudagent_ext.diagnosis.case_library import load_cases
 from cloudagent_ext.diagnosis.session import SessionBudget as _SessionBudget
-from cloudagent_ext.diagnosis.evaluation.runner import run_evaluation
 from cloudagent_ext.tool_system.errors import ToolInputError
 from cloudagent_ext.tool_system.tools import agent as agent_tools
 
@@ -134,20 +132,3 @@ class TestDelegationBudget:
         begin_delegation(rt_b, "code-diagnosis", "objective-0")
         assert rt_a.session.delegations_used == 3
         assert rt_b.session.delegations_used == 1
-
-
-class TestCrossDomainCase:
-    def test_cross_case_loads(self) -> None:
-        cases = load_cases("cross")
-        # 对照实验要求最小样本量，cross 域已扩到 6 例（原 1 例）
-        assert len(cases) >= 6
-        assert any(case["case_id"] == "cross-001" for case in cases)
-        for case in cases:
-            assert set(case["expected_agents"]) == {"log-diagnosis", "code-diagnosis"}
-            assert case["domain"] == "cross"
-
-    def test_cross_offline_runs(self, tmp_path: Path) -> None:
-        summary = run_evaluation(mode="offline", domain="cross", out_dir=tmp_path)
-        assert summary["completeness"] == "complete"
-        report = (tmp_path / summary["run_id"] / "summary.md").read_text(encoding="utf-8")
-        assert report.startswith("# 跨域 诊断评测报告")

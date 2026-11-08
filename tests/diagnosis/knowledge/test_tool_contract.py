@@ -42,13 +42,13 @@ def index_file(tmp_path, monkeypatch):
     root = tmp_path / "cases"
     root.mkdir()
     payload = {
-        "case_id": "sync-001",
+        "case_id": "demo-a",
         "domain": "sync",
         "scenario": "upstream_has_downstream_missing",
         "input": {"question": "orders 上游 50000 行、下游 0 行，确认是否真的没落库"},
         "ground_truth": {"root_causes": [{"description": "orders 表未落库"}]},
     }
-    (root / "sync-001.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    (root / "demo-a.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     path = KnowledgeIndex(build_chunks(root)).save(tmp_path / "index.json")
     monkeypatch.setenv(retriever.INDEX_ENV, str(path))
     retriever.reset_cache()

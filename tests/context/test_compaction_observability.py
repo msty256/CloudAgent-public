@@ -26,7 +26,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from cloudagent_ext.diagnosis.evaluation.executors import _recall_stats
+from cloudagent_ext.diagnosis.eval_support.execute import _recall_stats
 from cloudagent_ext.services.compact.pipeline import CompressionPipeline, PipelineConfig
 from cloudagent_ext.types.messages import create_assistant_message, create_user_message
 
@@ -132,15 +132,3 @@ class TestRecallStats:
 
     def test_no_recall(self) -> None:
         assert _recall_stats([{"id": "a", "name": "Read"}], []) == (0, 0)
-
-
-class TestMetaShape:
-    def test_offline_meta_has_compaction_fields(self, tmp_path: Path) -> None:
-        from cloudagent_ext.diagnosis.evaluation.runner import run_evaluation
-
-        summary = run_evaluation(mode="offline", domain="sync", out_dir=tmp_path)
-        case_file = sorted((tmp_path / summary["run_id"] / "cases").glob("*.json"))[0]
-        meta = json.loads(case_file.read_text(encoding="utf-8"))["meta"]
-        for key in ("compaction", "recall_count", "recall_miss"):
-            assert key in meta, f"meta 缺 {key}"
-        assert meta["recall_count"] == 0

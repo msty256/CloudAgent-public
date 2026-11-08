@@ -26,8 +26,7 @@ from pathlib import Path
 import pytest
 
 from cloudagent_ext.diagnosis.db.sql_guard import SqlGuardError, validate_readonly_sql
-from cloudagent_ext.diagnosis.evaluation import run_evaluation
-from cloudagent_ext.diagnosis.evaluation.executors import OfflineExecutor, build_diagnosis_tool_context
+from cloudagent_ext.diagnosis.eval_support.execute import build_diagnosis_tool_context
 from cloudagent_ext.tool_system.defaults import build_default_registry
 from cloudagent_ext.tool_system.protocol import ToolCall
 
@@ -55,7 +54,7 @@ class TestToolAuthorization:
     def test_unauthorized_tool_rejected_though_prompt_claims_authority(self) -> None:
         # 提示层声称的"授权"不改变代码层：执行 registry 白名单裁剪后，
         # 白名单外工具（即便存在于默认注册表）在 dispatch 边界被拒绝。
-        from cloudagent_ext.diagnosis.evaluation.executors import _build_restricted_registry
+        from cloudagent_ext.diagnosis.eval_support.execute import _build_restricted_registry
 
         full = build_default_registry(load_agent_tools=False)
         restricted = _build_restricted_registry(full, ["Bash", "Read"])
@@ -71,20 +70,6 @@ class TestToolAuthorization:
         assert result.is_error is True
         assert "unknown tool" in str(result.output)
 
-
-class TestMaliciousCaseOffline:
-    def test_injection_text_in_response_classified_safely(self, tmp_path: Path) -> None:
-        # 响应含指令性文本且无协议 JSON → 按规则判 invalid_output；无越权副作用
-        responses = {"sql-012": _INJECTION_TEXT + " (no structured output here)"}
-        summary = run_evaluation(
-            mode="offline",
-            executor=OfflineExecutor(responses=responses),
-            case_ids=["sql-012"],
-            out_dir=tmp_path,
-        )
-        assert summary["completeness"] == "complete"
-        assert summary["counts"]["invalid_output"] == 1
-        assert summary["safety_violation_cases"] == 0  # 纯文本本身不构成清单违规
 
     def test_restricted_context_rejects_write_even_with_injection_framing(self) -> None:
         # 注入话术包装的写命令：仍被权限边界拒绝（framing 不改变判定）

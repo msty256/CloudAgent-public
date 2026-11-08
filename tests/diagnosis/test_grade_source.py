@@ -24,9 +24,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from cloudagent_ext.diagnosis.evaluation.executors import (
+from cloudagent_ext.diagnosis.eval_support.execute import (
     CaseRun,
-    LiveExecutor,
+    LiveCaseRunner,
     _last_subagent_payload,
     _wants_subagent_grade,
 )
@@ -52,11 +52,11 @@ class TestWantsSubagent:
 class TestInvalidChoice:
     def test_rejects_unknown_grade_source(self) -> None:
         with pytest.raises(ValueError, match="grade_source"):
-            LiveExecutor(grade_source="whatever")
+            LiveCaseRunner(grade_source="whatever")
 
     def test_accepts_valid(self) -> None:
         for value in ("auto", "main", "subagent"):
-            assert LiveExecutor(grade_source=value)._grade_source == value
+            assert LiveCaseRunner(grade_source=value)._grade_source == value
 
 
 def _result(status: str = "success", summary: str = "ok") -> DiagnosisResult:
@@ -123,18 +123,3 @@ class TestCaseRunCarriesBoth:
 
     def test_default_is_empty(self) -> None:
         assert CaseRun(case_id="c1", source="x", raw_output="").main_answer == ""
-
-
-class TestPayloadField:
-    def test_offline_run_records_grade_source(self, tmp_path) -> None:
-        from cloudagent_ext.diagnosis.evaluation.runner import run_evaluation
-
-        summary = run_evaluation(mode="offline", domain="sync", out_dir=tmp_path)
-        run = json.loads(
-            (tmp_path / summary["run_id"] / "run.json").read_text(encoding="utf-8")
-        )
-        assert run["grade_source"] == "auto"
-
-        case_files = sorted((tmp_path / summary["run_id"] / "cases").glob("*.json"))
-        case = json.loads(case_files[0].read_text(encoding="utf-8"))
-        assert "main_answer" in case  # 形状稳定：即使离线也有这个键

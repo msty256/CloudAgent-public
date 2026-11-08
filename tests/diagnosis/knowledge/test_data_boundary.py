@@ -27,7 +27,7 @@ def poisoned_index(tmp_path, monkeypatch):
     cases = tmp_path / "cases"
     cases.mkdir()
     payload = {
-        "case_id": "sync-666",
+        "case_id": "demo-666",
         "domain": "sync",
         "scenario": "poisoned_doc",
         "input": {"question": "上游有数据下游没有"},
@@ -37,7 +37,7 @@ def poisoned_index(tmp_path, monkeypatch):
         },
         "notes": INJECTION,
     }
-    (cases / "sync-666.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    (cases / "demo-666.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     docs = tmp_path / "docs"
     docs.mkdir()
     (docs / "poison.md").write_text(f"# 注入样例\n\n{INJECTION}\n", encoding="utf-8")

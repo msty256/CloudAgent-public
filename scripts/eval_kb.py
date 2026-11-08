@@ -11,7 +11,7 @@
 
 标注格式（``eval/kb_queries.jsonl``）::
 
-    {"query": "上游有数据下游没有", "expected": ["cases/sync-001.json"]}
+    {"query": "上游有数据下游没有", "expected": []},  # EVAL-KB1：case 数据集已迁评测仓，期望列表待重建
 
 用法::
 
@@ -120,7 +120,11 @@ def build_or_load(args) -> KnowledgeIndex:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Evaluate knowledge retrieval (BM25 / vector / hybrid).")
-    parser.add_argument("--cases", default=str(REPO_ROOT / "cloudagent_ext" / "diagnosis" / "cases"))
+    parser.add_argument(
+        "--cases", default="none",
+        help="EVAL-KB1 后案例数据集不在本仓（benchmark 归评测仓）；"
+             "默认 docs-only。历史 CASES 期望列表（cases/sync-001.json 等）已失效",
+    )
     parser.add_argument("--docs", default=str(REPO_ROOT / "docs"))
     parser.add_argument("--queries", default=str(REPO_ROOT / "eval" / "kb_queries.jsonl"))
     parser.add_argument("--index", default=None, help="直接加载已构建索引（优先于 --cases/--docs）")
